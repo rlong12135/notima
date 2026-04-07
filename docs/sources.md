@@ -1,6 +1,6 @@
 # Source Notes
 
-This repo keeps clearly licensed reference material in scope for expansion, while the current runtime hero and tile sheets are original repo-owned generated assets.
+This repo keeps clearly licensed reference material in scope for expansion, while the current runtime hero, tile, and dungeon-render sheets are original repo-owned generated assets.
 
 ## Current runtime art
 
@@ -10,6 +10,18 @@ This repo keeps clearly licensed reference material in scope for expansion, whil
 - matching raw runtime mirrors:
   - `assets/original/notima_isometric_hero.rgba`
   - `assets/original/notima_isometric_tiles.rgba`
+- `assets/original/notima_grim_wall.png`
+- `assets/original/notima_grim_floor.png`
+- `assets/original/notima_grim_ceiling.png`
+- `assets/original/notima_grim_portraits.png`
+- `assets/original/notima_grim_creatures.png`
+- generated locally by `tools/generate_grimrock_assets.py`
+- matching raw runtime mirrors:
+  - `assets/original/notima_grim_wall.rgba`
+  - `assets/original/notima_grim_floor.rgba`
+  - `assets/original/notima_grim_ceiling.rgba`
+  - `assets/original/notima_grim_portraits.rgba`
+  - `assets/original/notima_grim_creatures.rgba`
 
 ## Public-domain art references
 

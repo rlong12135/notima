@@ -18,6 +18,16 @@
     <None Include="..\..\assets\original\notima_isometric_hero.rgba" Link="Content\Art\notima_isometric_hero.rgba" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\original\notima_isometric_tiles.rgba" Link="Content\Art\notima_isometric_tiles.rgba" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\original\notima_enemy_sheet.rgba" Link="Content\Art\notima_enemy_sheet.rgba" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\original\notima_grim_wall.png" Link="Content\Art\notima_grim_wall.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\original\notima_grim_wall.rgba" Link="Content\Art\notima_grim_wall.rgba" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\original\notima_grim_floor.png" Link="Content\Art\notima_grim_floor.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\original\notima_grim_floor.rgba" Link="Content\Art\notima_grim_floor.rgba" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\original\notima_grim_ceiling.png" Link="Content\Art\notima_grim_ceiling.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\original\notima_grim_ceiling.rgba" Link="Content\Art\notima_grim_ceiling.rgba" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\original\notima_grim_portraits.png" Link="Content\Art\notima_grim_portraits.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\original\notima_grim_portraits.rgba" Link="Content\Art\notima_grim_portraits.rgba" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\original\notima_grim_creatures.png" Link="Content\Art\notima_grim_creatures.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\original\notima_grim_creatures.rgba" Link="Content\Art\notima_grim_creatures.rgba" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\public-domain\julia-player-cc0.png" Link="Content\Art\julia-player-cc0.png" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\public-domain\overworld-tiles-cc0.png" Link="Content\Art\overworld-tiles-cc0.png" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\public-domain\julia-player-cc0.rgba" Link="Content\Art\julia-player-cc0.rgba" CopyToOutputDirectory="PreserveNewest" />

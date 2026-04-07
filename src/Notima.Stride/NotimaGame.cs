@@ -65,6 +65,11 @@ public sealed class NotimaGame : Game
     private Texture playerTexture = null!;
     private Texture tileTexture = null!;
     private Texture enemyTexture = null!;
+    private Texture grimWallTexture = null!;
+    private Texture grimFloorTexture = null!;
+    private Texture grimCeilingTexture = null!;
+    private Texture grimPortraitTexture = null!;
+    private Texture grimCreatureTexture = null!;
     private SimpleAudioPlayer? audioPlayer;
     private OverworldMap map = null!;
     private GridPoint playerCell;
@@ -135,6 +140,11 @@ public sealed class NotimaGame : Game
         tileTexture = LoadRgbaTexture("Content/Art/notima_isometric_tiles.rgba", 32, 495);
         playerTexture = LoadRgbaTexture("Content/Art/notima_isometric_hero.rgba", 99, 528);
         enemyTexture = LoadRgbaTexture("Content/Art/notima_enemy_sheet.rgba", 50, 75);
+        grimWallTexture = LoadRgbaTexture("Content/Art/notima_grim_wall.rgba", 256, 256);
+        grimFloorTexture = LoadRgbaTexture("Content/Art/notima_grim_floor.rgba", 256, 256);
+        grimCeilingTexture = LoadRgbaTexture("Content/Art/notima_grim_ceiling.rgba", 256, 256);
+        grimPortraitTexture = LoadRgbaTexture("Content/Art/notima_grim_portraits.rgba", 512, 128);
+        grimCreatureTexture = LoadRgbaTexture("Content/Art/notima_grim_creatures.rgba", 256, 384);
         audioPlayer = new SimpleAudioPlayer();
         LoadMapFromDisk();
         UpdateWindowTitle();
@@ -172,6 +182,11 @@ public sealed class NotimaGame : Game
         tileTexture?.Dispose();
         playerTexture?.Dispose();
         enemyTexture?.Dispose();
+        grimWallTexture?.Dispose();
+        grimFloorTexture?.Dispose();
+        grimCeilingTexture?.Dispose();
+        grimPortraitTexture?.Dispose();
+        grimCreatureTexture?.Dispose();
         audioPlayer?.Dispose();
         spriteBatch?.Dispose();
         base.Destroy();
@@ -1512,6 +1527,12 @@ public sealed class NotimaGame : Game
 
     private void DrawMap()
     {
+        if (dungeon is not null)
+        {
+            DrawDungeonCrawlerView();
+            return;
+        }
+
         DrawPanel(28, 28, 692, 664, new Color(26, 35, 49, 240));
         DrawFrame(new RectangleF(28, 28, 692, 664), new Color(102, 124, 171), 2);
 
@@ -1555,6 +1576,249 @@ public sealed class NotimaGame : Game
         var playerSource = new RectangleF(playerFrame.X, playerFrame.Y, playerFrame.Width, playerFrame.Height);
         spriteBatch.Draw(playerTexture, UiRect(playerDestination), playerSource, Color.White, 0, Vector2.Zero);
     }
+
+    private void DrawDungeonCrawlerView()
+    {
+        var frame = new RectangleF(28, 28, 692, 664);
+        var view = new RectangleF(52, 52, 644, 548);
+        DrawPanel(frame.X, frame.Y, frame.Width, frame.Height, new Color(20, 22, 28, 244));
+        DrawFrame(frame, new Color(112, 120, 138), 2);
+
+        DrawText($"DUNGEON LV {dungeon?.Level ?? 1}", new Vector2(view.X + 18, view.Y + 16), new Color(210, 194, 154), 2);
+        DrawText($"FACING {facing.ToString().ToUpperInvariant()}", new Vector2(view.X + 438, view.Y + 16), new Color(138, 152, 174), 2);
+
+        var viewport = new RectangleF(view.X + 18, view.Y + 46, view.Width - 36, 420);
+        DrawPanel(viewport.X, viewport.Y, viewport.Width, viewport.Height, new Color(10, 12, 18, 255));
+        DrawFrame(viewport, new Color(80, 88, 106), 2);
+        DrawDungeonEnvironment(viewport);
+        DrawDungeonInset(view);
+        DrawDungeonPortraitStrip(view);
+    }
+
+    private void DrawDungeonEnvironment(RectangleF viewport)
+    {
+        var ceilingRect = new RectangleF(viewport.X, viewport.Y, viewport.Width, viewport.Height * 0.47f);
+        var floorRect = new RectangleF(viewport.X, viewport.Y + (viewport.Height * 0.47f), viewport.Width, viewport.Height * 0.53f);
+        spriteBatch.Draw(grimCeilingTexture, UiRect(ceilingRect), Color.White);
+        spriteBatch.Draw(grimFloorTexture, UiRect(floorRect), Color.White);
+
+        var portals = new[]
+        {
+            new RectangleF(viewport.X + 42, viewport.Y + 38, viewport.Width - 84, viewport.Height - 108),
+            new RectangleF(viewport.X + 106, viewport.Y + 78, viewport.Width - 212, viewport.Height - 176),
+            new RectangleF(viewport.X + 158, viewport.Y + 112, viewport.Width - 316, viewport.Height - 230),
+            new RectangleF(viewport.X + 202, viewport.Y + 140, viewport.Width - 404, viewport.Height - 274),
+            new RectangleF(viewport.X + 236, viewport.Y + 164, viewport.Width - 472, viewport.Height - 312),
+        };
+
+        for (var depth = portals.Length - 1; depth >= 0; depth--)
+        {
+            var portal = portals[depth];
+            var next = depth == portals.Length - 1 ? portal : portals[depth + 1];
+
+            var forward = GetDungeonRelativeCell(0, depth + 1);
+            var forwardSymbol = GetDungeonCellSymbol(forward);
+            var frontBlocked = IsBlockedDungeonSymbol(forwardSymbol);
+
+            var leftCell = GetDungeonRelativeCell(-1, depth);
+            var rightCell = GetDungeonRelativeCell(1, depth);
+            if (IsBlockedDungeonSymbol(GetDungeonCellSymbol(leftCell)))
+            {
+                var leftWall = new RectangleF(portal.X, next.Y, Math.Max(28.0f, next.X - portal.X + 14.0f), next.Height);
+                spriteBatch.Draw(grimWallTexture, UiRect(leftWall), Color.White);
+                DrawFrame(leftWall, new Color(42, 40, 46), 2);
+            }
+
+            if (IsBlockedDungeonSymbol(GetDungeonCellSymbol(rightCell)))
+            {
+                var rightWall = new RectangleF(next.Right - 14.0f, next.Y, Math.Max(28.0f, portal.Right - next.Right + 14.0f), next.Height);
+                spriteBatch.Draw(grimWallTexture, UiRect(rightWall), Color.White);
+                DrawFrame(rightWall, new Color(42, 40, 46), 2);
+            }
+
+            if (frontBlocked)
+            {
+                spriteBatch.Draw(grimWallTexture, UiRect(portal), Color.White);
+                DrawFrame(portal, new Color(30, 28, 32), 3);
+                DrawDungeonFeatureBillboard(forwardSymbol, portal, depth);
+                break;
+            }
+
+            DrawDungeonFeatureBillboard(forwardSymbol, portal, depth);
+        }
+
+        if (hasPendingMove)
+        {
+            DrawDungeonQueuedMoveIndicator(viewport);
+        }
+    }
+
+    private void DrawDungeonQueuedMoveIndicator(RectangleF viewport)
+    {
+        if (dungeon is null)
+        {
+            return;
+        }
+
+        var dx = pendingMoveTarget.X - dungeonCell.X;
+        var dy = pendingMoveTarget.Y - dungeonCell.Y;
+        var indicator = new RectangleF(viewport.Center.X - 46.0f, viewport.Bottom - 82.0f, 92.0f, 46.0f);
+        if (dx == 0 && dy == 0)
+        {
+            return;
+        }
+
+        if (dx < 0)
+        {
+            indicator = new RectangleF(viewport.X + 26.0f, viewport.Center.Y - 22.0f, 92.0f, 46.0f);
+        }
+        else if (dx > 0)
+        {
+            indicator = new RectangleF(viewport.Right - 118.0f, viewport.Center.Y - 22.0f, 92.0f, 46.0f);
+        }
+        else if (dy < 0)
+        {
+            indicator = new RectangleF(viewport.Center.X - 46.0f, viewport.Y + 54.0f, 92.0f, 46.0f);
+        }
+
+        DrawPanel(indicator.X, indicator.Y, indicator.Width, indicator.Height, new Color(170, 32, 32, 110));
+        DrawFrame(indicator, new Color(220, 86, 86), 2);
+    }
+
+    private void DrawDungeonInset(RectangleF view)
+    {
+        if (dungeon is null)
+        {
+            return;
+        }
+
+        var inset = new RectangleF(view.X + 18, view.Bottom - 126, 164, 94);
+        DrawPanel(inset.X, inset.Y, inset.Width, inset.Height, new Color(16, 18, 24, 230));
+        DrawFrame(inset, new Color(86, 94, 116), 1);
+        DrawText("FORMATION", new Vector2(inset.X + 8, inset.Y + 8), new Color(168, 176, 194), 1);
+
+        const float cell = 22.0f;
+        for (var gy = -1; gy <= 1; gy++)
+        {
+            for (var gx = -2; gx <= 2; gx++)
+            {
+                var point = new GridPoint(dungeonCell.X + gx, dungeonCell.Y + gy);
+                var symbol = GetDungeonCellSymbol(point);
+                var rect = new RectangleF(inset.X + 18 + ((gx + 2) * (cell + 4)), inset.Y + 28 + ((gy + 1) * (cell + 4)), cell, cell);
+                var color = IsBlockedDungeonSymbol(symbol) ? new Color(60, 62, 68) : new Color(42, 48, 60);
+                if (point == dungeonCell)
+                {
+                    color = new Color(168, 138, 84);
+                }
+                else if (hasPendingMove && point == pendingMoveTarget)
+                {
+                    color = new Color(176, 56, 56);
+                }
+                else if (symbol is 'M' or 'B')
+                {
+                    color = new Color(128, 64, 64);
+                }
+
+                DrawPanel(rect.X, rect.Y, rect.Width, rect.Height, color);
+                DrawFrame(rect, new Color(12, 14, 18), 1);
+            }
+        }
+    }
+
+    private void DrawDungeonPortraitStrip(RectangleF view)
+    {
+        for (var i = 0; i < party.Members.Count; i++)
+        {
+            var card = new RectangleF(view.X + 206 + (i * 112), view.Bottom - 122, 96, 96);
+            var source = new RectangleF(i * 128, 0, 128, 128);
+            DrawPanel(card.X, card.Y, card.Width, card.Height, new Color(16, 18, 22, 220));
+            DrawFrame(card, new Color(92, 86, 74), 2);
+            spriteBatch.Draw(grimPortraitTexture, UiRect(new RectangleF(card.X + 6, card.Y + 6, 84, 84)), source, Color.White, 0, Vector2.Zero);
+            DrawText($"{party.Members[i].Name}", new Vector2(card.X + 8, card.Bottom - 18), party.Members[i].IsAlive ? new Color(228, 228, 236) : new Color(122, 122, 132), 1);
+        }
+    }
+
+    private void DrawDungeonFeatureBillboard(char symbol, RectangleF portal, int depth)
+    {
+        if (symbol is '.' or '#')
+        {
+            return;
+        }
+
+        var scale = 1.0f - (depth * 0.16f);
+        var width = portal.Width * MathF.Max(0.22f, 0.4f * scale);
+        var height = portal.Height * MathF.Max(0.24f, 0.48f * scale);
+        var dest = new RectangleF(portal.Center.X - (width * 0.5f), portal.Bottom - height - 8.0f, width, height);
+
+        if (symbol is 'M' or 'B')
+        {
+            var row = symbol == 'B' ? 2 : 0;
+            var frame = ((int)(totalTime * 4.0f)) % 2;
+            var source = new RectangleF(frame * 128, row * 128, 128, 128);
+            spriteBatch.Draw(grimCreatureTexture, UiRect(dest), source, Color.White, 0, Vector2.Zero);
+            return;
+        }
+
+        var color = symbol switch
+        {
+            '<' => new Color(214, 198, 154),
+            '>' => new Color(184, 168, 136),
+            'G' => new Color(194, 152, 88),
+            'L' => new Color(112, 150, 170),
+            'k' => new Color(186, 160, 92),
+            'x' => new Color(110, 94, 82),
+            _ => new Color(160, 122, 96),
+        };
+
+        DrawPanel(dest.X, dest.Y, dest.Width, dest.Height, new Color(0, 0, 0, 40));
+        DrawFrame(dest, new Color(42, 38, 34), 1);
+        DrawText(GetDungeonFeatureLabel(symbol), new Vector2(dest.X + 10, dest.Center.Y - 6), color, 2);
+    }
+
+    private GridPoint GetDungeonRelativeCell(int side, int forward)
+    {
+        var forwardVector = facing switch
+        {
+            Direction.Up => new GridPoint(0, -1),
+            Direction.Down => new GridPoint(0, 1),
+            Direction.Left => new GridPoint(-1, 0),
+            _ => new GridPoint(1, 0),
+        };
+        var rightVector = facing switch
+        {
+            Direction.Up => new GridPoint(1, 0),
+            Direction.Down => new GridPoint(-1, 0),
+            Direction.Left => new GridPoint(0, -1),
+            _ => new GridPoint(0, 1),
+        };
+
+        return new GridPoint(
+            dungeonCell.X + (forwardVector.X * forward) + (rightVector.X * side),
+            dungeonCell.Y + (forwardVector.Y * forward) + (rightVector.Y * side));
+    }
+
+    private char GetDungeonCellSymbol(GridPoint point)
+    {
+        if (dungeon is null || point.X < 0 || point.Y < 0 || point.X >= dungeon.Width || point.Y >= dungeon.Height)
+        {
+            return '#';
+        }
+
+        return dungeon.GetTile(point);
+    }
+
+    private bool IsBlockedDungeonSymbol(char symbol) => !GetTileDefinition(symbol).Walkable;
+
+    private string GetDungeonFeatureLabel(char symbol) => symbol switch
+    {
+        '<' => "UP",
+        '>' => "DOWN",
+        'G' => "CHEST",
+        'L' => "FOUNTAIN",
+        'k' => "KEY",
+        'x' => "GATE",
+        _ => "ALTAR",
+    };
 
     private void DrawDungeonStoneFill(char symbol, RectangleF tileDestination)
     {
