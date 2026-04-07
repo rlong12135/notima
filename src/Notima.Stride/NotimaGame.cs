@@ -70,6 +70,7 @@ public sealed class NotimaGame : Game
     private Texture grimFloorTexture = null!;
     private Texture grimCeilingTexture = null!;
     private Texture grimPortraitTexture = null!;
+    private Texture grimEnemyPortraitTexture = null!;
     private Texture grimCreatureTexture = null!;
     private SimpleAudioPlayer? audioPlayer;
     private OverworldMap map = null!;
@@ -142,6 +143,7 @@ public sealed class NotimaGame : Game
         grimFloorTexture = LoadRgbaTexture("Content/Art/notima_grim_floor.rgba", 256, 256);
         grimCeilingTexture = LoadRgbaTexture("Content/Art/notima_grim_ceiling.rgba", 256, 256);
         grimPortraitTexture = LoadRgbaTexture("Content/Art/notima_grim_portraits.rgba", 512, 128);
+        grimEnemyPortraitTexture = LoadRgbaTexture("Content/Art/notima_grim_enemy_portraits.rgba", 384, 128);
         grimCreatureTexture = LoadRgbaTexture("Content/Art/notima_grim_creatures.rgba", 256, 384);
         audioPlayer = new SimpleAudioPlayer();
         LoadMapFromDisk();
@@ -185,6 +187,7 @@ public sealed class NotimaGame : Game
         grimFloorTexture?.Dispose();
         grimCeilingTexture?.Dispose();
         grimPortraitTexture?.Dispose();
+        grimEnemyPortraitTexture?.Dispose();
         grimCreatureTexture?.Dispose();
         audioPlayer?.Dispose();
         spriteBatch?.Dispose();
@@ -1477,6 +1480,11 @@ public sealed class NotimaGame : Game
     private string DescribeCurrentTile()
     {
         var symbol = dungeon is null ? map.Rows[playerCell.Y][playerCell.X] : dungeon.Rows[dungeonCell.Y][dungeonCell.X];
+        if (dungeon is not null && symbol == '.')
+        {
+            return $"[D{dungeon.Level}:{dungeonCell.X},{dungeonCell.Y}] DUNGEON FLOOR: Worn stone underfoot, cold with old damp.";
+        }
+
         var tile = GetTileDefinition(symbol);
         var location = dungeon is null
             ? $"[{playerCell.X},{playerCell.Y}]"
@@ -2425,10 +2433,12 @@ public sealed class NotimaGame : Game
                 DrawPanel(dest.Center.X - (dest.Width * 0.03f), dest.Bottom - (dest.Height * 0.28f), dest.Width * 0.06f, dest.Height * 0.18f, new Color(172, 162, 136));
                 break;
             case 'G':
-                DrawPanel(dest.X + (dest.Width * 0.18f), dest.Bottom - (dest.Height * 0.3f), dest.Width * 0.64f, dest.Height * 0.18f, new Color(138, 96, 42));
-                DrawPanel(dest.X + (dest.Width * 0.22f), dest.Bottom - (dest.Height * 0.46f), dest.Width * 0.56f, dest.Height * 0.16f, new Color(172, 126, 58));
-                DrawFrame(new RectangleF(dest.X + (dest.Width * 0.18f), dest.Bottom - (dest.Height * 0.3f), dest.Width * 0.64f, dest.Height * 0.18f), new Color(76, 52, 24), 1);
-                DrawPanel(dest.Center.X - 2.0f, dest.Bottom - (dest.Height * 0.28f), 4.0f, dest.Height * 0.18f, new Color(224, 192, 92));
+                var chestBody = new RectangleF(dest.X + (dest.Width * 0.18f), dest.Bottom - (dest.Height * 0.2f), dest.Width * 0.64f, dest.Height * 0.12f);
+                var chestLid = new RectangleF(dest.X + (dest.Width * 0.22f), chestBody.Y - (dest.Height * 0.12f), dest.Width * 0.56f, dest.Height * 0.12f);
+                DrawPanel(chestBody.X, chestBody.Y, chestBody.Width, chestBody.Height, new Color(138, 96, 42));
+                DrawPanel(chestLid.X, chestLid.Y, chestLid.Width, chestLid.Height, new Color(172, 126, 58));
+                DrawFrame(chestBody, new Color(76, 52, 24), 1);
+                DrawPanel(chestBody.Center.X - 2.0f, chestBody.Y + (chestBody.Height * 0.08f), 4.0f, chestBody.Height * 0.72f, new Color(224, 192, 92));
                 break;
             case 'L':
                 DrawPanel(dest.X + (dest.Width * 0.24f), dest.Bottom - (dest.Height * 0.28f), dest.Width * 0.52f, dest.Height * 0.16f, new Color(84, 108, 118));
@@ -3196,102 +3206,67 @@ public sealed class NotimaGame : Game
 
     private void DrawEncounterAnimation(RectangleF panelRect)
     {
-        var boardRect = new RectangleF(panelRect.X + 18, panelRect.Y + 56, panelRect.Width - 36, 144);
+        var boardRect = new RectangleF(panelRect.X + 18, panelRect.Y + 24, panelRect.Width - 36, 144);
         DrawPanel(boardRect.X, boardRect.Y, boardRect.Width, boardRect.Height, new Color(28, 36, 50, 220));
         DrawFrame(boardRect, new Color(106, 128, 177), 1);
-
-        var boardOrigin = new Vector2(boardRect.X + (boardRect.Width * 0.5f) - 34.0f, boardRect.Y + 22.0f);
-        for (var boardY = 0; boardY < 3; boardY++)
-        {
-            for (var boardX = 0; boardX < 4; boardX++)
-            {
-                var tile = GetEncounterTileDestination(boardOrigin, boardX, boardY);
-                spriteBatch.Draw(tileTexture, UiRect(tile), GetIsoTileSource('.'), Color.White, 0, Vector2.Zero);
-            }
-        }
-
-        for (var i = 0; i < party.Members.Count; i++)
-        {
-            var member = party.Members[i];
-            var frame = GetPlayerSourceFrameFor(i == 0 ? facing : Direction.Right, ((int)(totalTime * 7.0f) + i) % 3, i);
-            var sourceRect = new RectangleF(frame.X, frame.Y, frame.Width, frame.Height);
-            var bounce = MathF.Sin((totalTime * 7.0f) + (i * 0.7f)) * 2.4f;
-            var tile = GetEncounterTileDestination(boardOrigin, i % 2, i / 2);
-            var offset = GetPartyAttackOffset(i);
-            var destination = new RectangleF(tile.X + 12.0f + offset.X, tile.Y - 4.0f + bounce + offset.Y, 34.0f, 34.0f);
-            var shadowColor = member.IsAlive ? new Color(0, 0, 0, 64) : new Color(0, 0, 0, 24);
-            spriteBatch.Draw(whiteTexture, UiRect(new RectangleF(destination.X + 8.0f, destination.Y + destination.Height - 5.0f, destination.Width - 16.0f, 3.0f)), shadowColor);
-            var tint = member.IsAlive ? member.Tint : new Color(78, 84, 98);
-            spriteBatch.Draw(playerTexture, UiRect(destination), sourceRect, tint, 0, Vector2.Zero);
-            if (!member.IsAlive)
-            {
-                spriteBatch.Draw(whiteTexture, UiRect(new RectangleF(destination.X + 6.0f, destination.Y + 16.0f, destination.Width - 12.0f, 2.0f)), new Color(176, 82, 82));
-            }
-        }
-
-        DrawEnemyBoardPresence(boardOrigin);
-    }
-
-    private void DrawEnemyBoardPresence(Vector2 boardOrigin)
-    {
         if (encounter is null)
         {
             return;
         }
 
+        var cardWidth = 156.0f;
+        var cardHeight = 118.0f;
+        var gap = 12.0f;
+        var totalWidth = (cardWidth * encounter.Enemies.Count) + (gap * Math.Max(0, encounter.Enemies.Count - 1));
+        var startX = boardRect.Center.X - (totalWidth * 0.5f);
+        var startY = boardRect.Y + 12.0f;
+
         for (var i = 0; i < encounter.Enemies.Count; i++)
         {
             var enemy = encounter.Enemies[i];
-            if (!enemy.IsAlive)
+            var card = new RectangleF(startX + (i * (cardWidth + gap)), startY, cardWidth, cardHeight);
+            var portraitRect = new RectangleF(card.X + 5.0f, card.Y + 5.0f, 108.0f, 108.0f);
+            var captionRect = new RectangleF(card.Right - 38.0f, card.Y + 5.0f, 33.0f, cardHeight - 10.0f);
+            var targetable = IsEnemyTargetable(i);
+            var selected = i == selectedEnemyIndex && targetable;
+            var cardColor = enemy.IsAlive ? new Color(18, 20, 26, 232) : new Color(14, 14, 18, 214);
+            DrawPanel(card.X, card.Y, card.Width, card.Height, cardColor);
+            DrawFrame(card, selected ? new Color(194, 160, 97) : new Color(92, 97, 112), selected ? 2 : 1);
+
+            var source = GetEnemyPortraitSource(enemy.Name);
+            var tint = enemy.IsAlive ? Color.White : new Color(118, 118, 126);
+            spriteBatch.Draw(grimEnemyPortraitTexture, UiRect(portraitRect), source, tint, 0, Vector2.Zero);
+
+            var missingRatio = 1.0f - (enemy.Health / (float)Math.Max(1, enemy.MaxHealth));
+            if (missingRatio > 0.0f)
             {
-                continue;
+                var overlayHeight = portraitRect.Height * missingRatio;
+                var overlayRect = new RectangleF(portraitRect.X, portraitRect.Bottom - overlayHeight, portraitRect.Width, overlayHeight);
+                DrawPanel(overlayRect.X, overlayRect.Y, overlayRect.Width, overlayRect.Height, new Color(168, 28, 28, 108));
             }
 
-            var enemyTile = GetEncounterTileDestination(boardOrigin, enemy.BoardX, enemy.BoardY);
-            spriteBatch.Draw(tileTexture, UiRect(enemyTile), GetIsoTileSource(encounter.Name == "FEN LEECHES" ? 'F' : '*'), Color.White, 0, Vector2.Zero);
-
-            if (i == selectedEnemyIndex && IsEnemyTargetable(i))
+            if (selected)
             {
-                var highlight = new RectangleF(enemyTile.X + 8.0f, enemyTile.Y + 14.0f, enemyTile.Width - 16.0f, enemyTile.Height - 28.0f);
-                spriteBatch.Draw(whiteTexture, UiRect(highlight), new Color(142, 112, 64, 36));
-                DrawFrame(highlight, new Color(164, 132, 76), 1);
+                var highlight = new RectangleF(portraitRect.X - 1.0f, portraitRect.Y - 1.0f, portraitRect.Width + 2.0f, portraitRect.Height + 2.0f);
+                DrawFrame(highlight, new Color(214, 184, 108), 2);
             }
 
-            var offset = GetEnemyAttackOffset(i);
-            DrawEnemySprite(
-                new Vector2(enemyTile.X + 6.0f + offset.X, enemyTile.Y - 10.0f + offset.Y),
-                i == selectedEnemyIndex ? 4 : 3,
-                enemy.Name);
+            DrawPanel(captionRect.X, captionRect.Y, captionRect.Width, captionRect.Height, new Color(8, 10, 14, 208));
+            DrawText(enemy.Name, new Vector2(captionRect.X + 4.0f, captionRect.Y + 4.0f), enemy.IsAlive ? new Color(228, 228, 236) : new Color(122, 122, 132), 1);
+            DrawText($"{enemy.Health}/{enemy.MaxHealth}", new Vector2(captionRect.X + 4.0f, captionRect.Bottom - 12.0f), enemy.IsAlive ? new Color(214, 220, 228) : new Color(122, 122, 132), 1);
         }
     }
 
-    private static RectangleF GetEncounterTileDestination(Vector2 origin, int x, int y)
+    private static RectangleF GetEnemyPortraitSource(string enemyName)
     {
-        var screenX = origin.X + ((x - y) * (IsoHalfWidth * 0.68f));
-        var screenY = origin.Y + ((x + y) * (IsoHalfHeight * 0.68f));
-        return new RectangleF(screenX, screenY, IsoTileWidth * 0.68f, IsoTileHeight * 0.68f);
-    }
-
-    private void DrawEnemySprite(Vector2 origin, int scale, string enemyName)
-    {
-        var frameIndex = ((int)(totalTime * 6.0f)) % 2;
-        var bob = MathF.Sin(totalTime * 5.0f) * 2.0f;
-        var source = GetEnemySourceFrame(enemyName, frameIndex);
-        var destination = new RectangleF(origin.X, origin.Y + bob, source.Width * scale, source.Height * scale);
-        spriteBatch.Draw(whiteTexture, UiRect(new RectangleF(destination.X + 4.0f, destination.Bottom - 4.0f, destination.Width - 8.0f, 3.0f)), new Color(0, 0, 0, 56));
-        spriteBatch.Draw(enemyTexture, UiRect(destination), new RectangleF(source.X, source.Y, source.Width, source.Height), Color.White, 0, Vector2.Zero);
-    }
-
-    private static Rectangle GetEnemySourceFrame(string enemyName, int frameIndex)
-    {
-        var row = enemyName switch
+        var column = enemyName switch
         {
             "WOLF" => 0,
             "LEECH" => 1,
             _ => 2,
         };
 
-        return new Rectangle(frameIndex * 25, row * 25, 24, 24);
+        return new RectangleF(column * 128, 0, 128, 128);
     }
 
     private void CycleEnemyTarget(int direction)

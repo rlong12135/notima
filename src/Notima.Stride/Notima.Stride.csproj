@@ -26,6 +26,8 @@
     <None Include="..\..\assets\original\notima_grim_ceiling.rgba" Link="Content\Art\notima_grim_ceiling.rgba" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\original\notima_grim_portraits.png" Link="Content\Art\notima_grim_portraits.png" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\original\notima_grim_portraits.rgba" Link="Content\Art\notima_grim_portraits.rgba" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\original\notima_grim_enemy_portraits.png" Link="Content\Art\notima_grim_enemy_portraits.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\original\notima_grim_enemy_portraits.rgba" Link="Content\Art\notima_grim_enemy_portraits.rgba" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\original\notima_grim_creatures.png" Link="Content\Art\notima_grim_creatures.png" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\original\notima_grim_creatures.rgba" Link="Content\Art\notima_grim_creatures.rgba" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\public-domain\julia-player-cc0.png" Link="Content\Art\julia-player-cc0.png" CopyToOutputDirectory="PreserveNewest" />
