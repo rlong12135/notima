@@ -5,16 +5,20 @@
 Current prototype features:
 
 - keyboard movement on a world grid
+- sprite-based overworld rendering using sourced public-domain art
 - sample overworld loaded from JSON
 - walkable and blocked terrain
-- landmarks for towns, shrines, ruins, and a keep
+- party stats: health, food, gold, level, steps
+- landmark interactions for towns, harbors, camps, keeps, shrines, ruins, and the dungeon entrance
+- lightweight random encounters with attack and retreat flow
 - Linux-tested Stride runtime setup
 - public-domain art and map-data sources documented for later sprite and world-generation integration
 
 Controls:
 
 - `Arrow Keys` or `WASD`: move one tile at a time
-- `Enter`: inspect the current tile
+- `Enter` or `Space`: inspect or interact with the current tile
+- `R` during an encounter: attempt retreat
 - `R`: reload the sample map and reset to the start
 - `Esc`: quit
 
@@ -29,5 +33,5 @@ Source notes:
 
 - Public-domain player sprite reference: `assets/public-domain/julia-player-cc0.png`
 - Public-domain overworld tiles reference: `assets/public-domain/overworld-tiles-cc0.png`
+- Linux runtime uses derived raw RGBA mirrors next to those PNGs to avoid the current Stride/Linux image-loader limitation
 - Public-domain map-data source notes: `docs/sources.md`
-
