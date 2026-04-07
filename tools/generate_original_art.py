@@ -17,6 +17,31 @@ def make_canvas(width: int, height: int) -> Image.Image:
     return Image.new("RGBA", (width, height), (0, 0, 0, 0))
 
 
+def grade_image(image: Image.Image, brightness: float, desaturate: float) -> Image.Image:
+    graded = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    src = image.load()
+    dst = graded.load()
+
+    for y in range(image.height):
+        for x in range(image.width):
+            r, g, b, a = src[x, y]
+            if a == 0:
+                continue
+
+            gray = int((r + g + b) / 3)
+            r = int((r * (1.0 - desaturate)) + (gray * desaturate))
+            g = int((g * (1.0 - desaturate)) + (gray * desaturate))
+            b = int((b * (1.0 - desaturate)) + (gray * desaturate))
+            dst[x, y] = (
+                max(0, min(255, int(r * brightness))),
+                max(0, min(255, int(g * brightness))),
+                max(0, min(255, int(b * brightness))),
+                a,
+            )
+
+    return graded
+
+
 def draw_diamond(draw: ImageDraw.ImageDraw, top_x: int, top_y: int, half_w: int, half_h: int, fill: tuple[int, int, int, int], outline: tuple[int, int, int, int]) -> None:
     points = [
         (top_x, top_y),
@@ -28,64 +53,63 @@ def draw_diamond(draw: ImageDraw.ImageDraw, top_x: int, top_y: int, half_w: int,
 
 
 def draw_plains(draw: ImageDraw.ImageDraw, y: int) -> None:
-    draw_diamond(draw, 16, y + 2, 15, 8, (118, 172, 96, 255), (77, 113, 60, 255))
-    draw.line((16, y + 4, 16, y + 8), fill=(163, 207, 120, 255), width=1)
-    draw.line((12, y + 10, 20, y + 10), fill=(145, 194, 111, 255), width=1)
-    draw.line((9, y + 12, 12, y + 9), fill=(214, 226, 148, 255))
-    draw.line((20, y + 13, 23, y + 10), fill=(214, 226, 148, 255))
-    for px, py in ((8, 13), (23, 12), (13, 17), (18, 15)):
-        draw.point((px, y + py), fill=(201, 230, 124, 255))
+    draw_diamond(draw, 16, y + 2, 15, 8, (83, 96, 61, 255), (45, 52, 36, 255))
+    draw.line((11, y + 10, 20, y + 10), fill=(102, 118, 71, 255), width=1)
+    draw.line((9, y + 13, 13, y + 9), fill=(58, 63, 40, 255))
+    draw.line((19, y + 15, 23, y + 11), fill=(58, 63, 40, 255))
+    for px, py in ((8, 13), (22, 12), (13, 17), (19, 16), (16, 8)):
+        draw.point((px, y + py), fill=(37, 41, 28, 255))
 
 
 def draw_forest(draw: ImageDraw.ImageDraw, y: int) -> None:
-    draw_diamond(draw, 16, y + 2, 15, 8, (86, 133, 88, 255), (59, 91, 60, 255))
+    draw_diamond(draw, 16, y + 2, 15, 8, (62, 77, 55, 255), (34, 42, 31, 255))
     for cx, cy, size in ((11, y + 8, 4), (17, y + 7, 5), (22, y + 10, 4)):
-        draw.ellipse((cx - size, cy - size, cx + size, cy + size), fill=(44, 95, 54, 255), outline=(30, 64, 34, 255))
-    draw.rectangle((15, y + 11, 17, y + 17), fill=(88, 62, 44, 255))
-    draw.line((12, y + 18, 20, y + 18), fill=(27, 50, 31, 255))
+        draw.ellipse((cx - size, cy - size, cx + size, cy + size), fill=(21, 35, 21, 255), outline=(8, 14, 8, 255))
+    draw.rectangle((15, y + 11, 17, y + 17), fill=(82, 58, 39, 255))
+    draw.line((11, y + 18, 21, y + 18), fill=(12, 18, 11, 255))
 
 
 def draw_water(draw: ImageDraw.ImageDraw, y: int) -> None:
-    draw_diamond(draw, 16, y + 2, 15, 8, (91, 152, 213, 255), (56, 97, 151, 255))
+    draw_diamond(draw, 16, y + 2, 15, 8, (58, 84, 104, 255), (28, 44, 56, 255))
     for wave_y in (8, 12, 16):
-        draw.arc((7, y + wave_y - 2, 16, y + wave_y + 2), 200, 340, fill=(189, 224, 255, 255))
-        draw.arc((16, y + wave_y - 1, 25, y + wave_y + 3), 200, 340, fill=(189, 224, 255, 255))
-    draw.line((10, y + 18, 22, y + 14), fill=(215, 238, 255, 180))
+        draw.arc((7, y + wave_y - 2, 16, y + wave_y + 2), 200, 340, fill=(118, 142, 164, 230))
+        draw.arc((16, y + wave_y - 1, 25, y + wave_y + 3), 200, 340, fill=(118, 142, 164, 230))
+    draw.line((10, y + 18, 22, y + 14), fill=(46, 60, 72, 170))
 
 
 def draw_mountains(draw: ImageDraw.ImageDraw, y: int) -> None:
-    draw_diamond(draw, 16, y + 2, 15, 8, (114, 121, 137, 255), (80, 86, 102, 255))
-    draw.polygon([(8, y + 16), (14, y + 6), (18, y + 16)], fill=(142, 150, 167, 255), outline=(76, 81, 93, 255))
-    draw.polygon([(15, y + 17), (21, y + 7), (26, y + 17)], fill=(170, 176, 191, 255), outline=(89, 95, 110, 255))
-    draw.polygon([(13, y + 9), (14, y + 6), (15, y + 9)], fill=(235, 240, 248, 255))
-    draw.polygon([(20, y + 10), (21, y + 7), (22, y + 10)], fill=(235, 240, 248, 255))
-    draw.line((7, y + 17, 26, y + 17), fill=(68, 74, 87, 255))
+    draw_diamond(draw, 16, y + 2, 15, 8, (76, 79, 83, 255), (38, 40, 43, 255))
+    draw.polygon([(8, y + 16), (14, y + 6), (18, y + 16)], fill=(122, 127, 134, 255), outline=(34, 36, 40, 255))
+    draw.polygon([(15, y + 17), (21, y + 7), (26, y + 17)], fill=(146, 150, 158, 255), outline=(42, 44, 49, 255))
+    draw.polygon([(13, y + 9), (14, y + 6), (15, y + 9)], fill=(195, 198, 204, 255))
+    draw.polygon([(20, y + 10), (21, y + 7), (22, y + 10)], fill=(195, 198, 204, 255))
+    draw.line((7, y + 17, 26, y + 17), fill=(21, 23, 26, 255))
 
 
 def draw_fen(draw: ImageDraw.ImageDraw, y: int) -> None:
-    draw_diamond(draw, 16, y + 2, 15, 8, (104, 131, 87, 255), (72, 92, 62, 255))
-    draw.ellipse((10, y + 10, 22, y + 18), fill=(84, 119, 98, 255), outline=(60, 86, 71, 255))
-    draw.line((9, y + 8, 7, y + 14), fill=(174, 187, 114, 255))
-    draw.line((22, y + 7, 24, y + 14), fill=(174, 187, 114, 255))
-    draw.line((16, y + 7, 16, y + 14), fill=(188, 202, 126, 255))
-    draw.point((13, y + 13), fill=(212, 230, 183, 255))
-    draw.point((19, y + 15), fill=(212, 230, 183, 255))
+    draw_diamond(draw, 16, y + 2, 15, 8, (74, 85, 60, 255), (40, 48, 34, 255))
+    draw.ellipse((10, y + 10, 22, y + 18), fill=(46, 58, 49, 255), outline=(20, 26, 22, 255))
+    draw.line((9, y + 8, 7, y + 14), fill=(114, 122, 73, 255))
+    draw.line((22, y + 7, 24, y + 14), fill=(114, 122, 73, 255))
+    draw.line((16, y + 7, 16, y + 14), fill=(126, 136, 81, 255))
+    draw.point((13, y + 13), fill=(95, 106, 76, 255))
+    draw.point((19, y + 15), fill=(95, 106, 76, 255))
 
 
 def draw_road(draw: ImageDraw.ImageDraw, y: int) -> None:
-    draw_diamond(draw, 16, y + 2, 15, 8, (124, 170, 100, 255), (81, 110, 64, 255))
-    draw.polygon([(16, y + 4), (23, y + 9), (15, y + 18), (9, y + 13)], fill=(181, 151, 109, 255), outline=(132, 104, 70, 255))
-    draw.line((16, y + 6, 16, y + 17), fill=(215, 190, 145, 255))
-    draw.line((13, y + 8, 19, y + 15), fill=(140, 113, 80, 255))
+    draw_diamond(draw, 16, y + 2, 15, 8, (81, 96, 63, 255), (43, 52, 35, 255))
+    draw.polygon([(16, y + 4), (23, y + 9), (15, y + 18), (9, y + 13)], fill=(136, 112, 79, 255), outline=(57, 45, 31, 255))
+    draw.line((16, y + 6, 16, y + 17), fill=(154, 129, 92, 255))
+    draw.line((13, y + 8, 19, y + 15), fill=(67, 53, 39, 255))
 
 
 def draw_structure(draw: ImageDraw.ImageDraw, y: int) -> None:
-    draw_diamond(draw, 16, y + 2, 15, 8, (116, 164, 101, 255), (76, 105, 64, 255))
-    draw.polygon([(9, y + 12), (16, y + 6), (23, y + 12), (16, y + 17)], fill=(179, 91, 82, 255), outline=(112, 52, 48, 255))
-    draw.rectangle((10, y + 12, 22, y + 20), fill=(225, 212, 179, 255), outline=(112, 96, 81, 255))
-    draw.rectangle((14, y + 14, 18, y + 20), fill=(88, 66, 54, 255))
-    draw.rectangle((18, y + 9, 21, y + 13), fill=(194, 189, 176, 255), outline=(96, 92, 86, 255))
-    draw.line((11, y + 20, 21, y + 20), fill=(88, 78, 66, 255))
+    draw_diamond(draw, 16, y + 2, 15, 8, (82, 97, 67, 255), (44, 53, 37, 255))
+    draw.polygon([(9, y + 12), (16, y + 6), (23, y + 12), (16, y + 17)], fill=(128, 69, 60, 255), outline=(37, 18, 17, 255))
+    draw.rectangle((10, y + 12, 22, y + 20), fill=(144, 130, 103, 255), outline=(48, 42, 35, 255))
+    draw.rectangle((14, y + 14, 18, y + 20), fill=(36, 25, 20, 255))
+    draw.rectangle((18, y + 9, 21, y + 13), fill=(118, 114, 108, 255), outline=(42, 40, 38, 255))
+    draw.line((11, y + 20, 21, y + 20), fill=(38, 33, 28, 255))
 
 
 def draw_keep(draw: ImageDraw.ImageDraw, y: int) -> None:
@@ -332,6 +356,12 @@ def build_enemy_sheet() -> Image.Image:
 
 
 def write_outputs(image: Image.Image, stem: str) -> None:
+    if "tiles" in stem:
+        image = grade_image(image, brightness=0.42, desaturate=0.34)
+    elif "hero" in stem:
+        image = grade_image(image, brightness=0.54, desaturate=0.24)
+    else:
+        image = grade_image(image, brightness=0.5, desaturate=0.28)
     png_path = ASSET_DIR / f"{stem}.png"
     rgba_path = ASSET_DIR / f"{stem}.rgba"
     image.save(png_path)

@@ -656,8 +656,8 @@ public sealed class NotimaGame : Game
         }
 
         var cursorDestination = GetIsoHighlightDestination(playerCell.X, playerCell.Y);
-        spriteBatch.Draw(whiteTexture, cursorDestination, new Color(255, 244, 166, 34));
-        DrawFrame(cursorDestination, new Color(255, 235, 119), 2);
+        spriteBatch.Draw(whiteTexture, cursorDestination, new Color(156, 138, 78, 26));
+        DrawFrame(cursorDestination, new Color(170, 148, 84), 2);
 
         var playerFrame = GetPlayerSourceFrame(0);
         var playerDestination = GetIsoCharacterDestination(playerCell.X, playerCell.Y, 0.0f);
@@ -674,9 +674,9 @@ public sealed class NotimaGame : Game
         var sourceRect = new RectangleF(source.X, source.Y, source.Width, source.Height);
         var tints = new[]
         {
-            new Color(181, 214, 255),
-            new Color(255, 204, 214),
-            new Color(255, 232, 174),
+            new Color(105, 126, 152),
+            new Color(140, 109, 119),
+            new Color(143, 129, 92),
         };
 
         var spacing = facing switch
@@ -735,27 +735,27 @@ public sealed class NotimaGame : Game
         DrawPanel(HudX, 28, HudWidth, 664, new Color(22, 28, 42, 232));
         DrawFrame(new RectangleF(HudX, 28, HudWidth, 664), new Color(108, 126, 173), 2);
 
-        DrawText("NOTIMA", new Vector2(HudX + 22, 46), new Color(255, 234, 160), 3);
-        DrawText(map.Name, new Vector2(HudX + 22, 88), new Color(188, 207, 255), 2);
+        DrawText("NOTIMA", new Vector2(HudX + 22, 46), new Color(178, 150, 96), 3);
+        DrawText(map.Name, new Vector2(HudX + 22, 88), new Color(124, 142, 174), 2);
 
-        DrawText($"HP {party.TotalHealth}/{party.MaxTotalHealth}", new Vector2(HudX + 22, 138), party.TotalHealth > (party.MaxTotalHealth / 2) ? new Color(155, 241, 163) : new Color(255, 179, 179), 2);
-        DrawText($"FOOD {party.Food}", new Vector2(HudX + 22, 168), new Color(255, 230, 155), 2);
-        DrawText($"GOLD {party.Gold}", new Vector2(HudX + 22, 198), new Color(255, 219, 122), 2);
-        DrawText($"LVL {party.Level}", new Vector2(HudX + 22, 228), new Color(191, 220, 255), 2);
-        DrawText($"STEPS {party.Steps}", new Vector2(HudX + 22, 258), new Color(201, 212, 236), 2);
+        DrawText($"HP {party.TotalHealth}/{party.MaxTotalHealth}", new Vector2(HudX + 22, 138), party.TotalHealth > (party.MaxTotalHealth / 2) ? new Color(108, 156, 113) : new Color(170, 111, 111), 2);
+        DrawText($"FOOD {party.Food}", new Vector2(HudX + 22, 168), new Color(171, 150, 99), 2);
+        DrawText($"GOLD {party.Gold}", new Vector2(HudX + 22, 198), new Color(184, 151, 88), 2);
+        DrawText($"LVL {party.Level}", new Vector2(HudX + 22, 228), new Color(123, 144, 173), 2);
+        DrawText($"STEPS {party.Steps}", new Vector2(HudX + 22, 258), new Color(133, 140, 160), 2);
 
-        DrawText("TILE", new Vector2(HudX + 22, 320), new Color(255, 234, 160), 2);
-        DrawWrappedText(DescribeCurrentTile(), new Vector2(HudX + 22, 350), 2, HudWidth - 44, new Color(219, 230, 255));
+        DrawText("TILE", new Vector2(HudX + 22, 320), new Color(178, 150, 96), 2);
+        DrawWrappedText(DescribeCurrentTile(), new Vector2(HudX + 22, 350), 2, HudWidth - 44, new Color(158, 169, 189));
 
-        DrawText("STATUS", new Vector2(HudX + 22, 450), new Color(255, 234, 160), 2);
-        DrawWrappedText(statusLine, new Vector2(HudX + 22, 480), 2, HudWidth - 44, new Color(230, 234, 243));
+        DrawText("STATUS", new Vector2(HudX + 22, 450), new Color(178, 150, 96), 2);
+        DrawWrappedText(statusLine, new Vector2(HudX + 22, 480), 2, HudWidth - 44, new Color(166, 170, 180));
 
-        DrawText("PARTY", new Vector2(HudX + 22, 550), new Color(255, 234, 160), 2);
+        DrawText("PARTY", new Vector2(HudX + 22, 550), new Color(178, 150, 96), 2);
         DrawPartyBanner(new Vector2(HudX + 22, 574));
 
-        DrawText("MOVE WASD OR ARROWS", new Vector2(HudX + 22, 622), new Color(198, 220, 255), 2);
-        DrawText("ENTER INTERACTS", new Vector2(HudX + 22, 648), new Color(198, 220, 255), 2);
-        DrawText("R RESETS  ESC QUITS", new Vector2(HudX + 22, 674), new Color(198, 220, 255), 2);
+        DrawText("MOVE WASD OR ARROWS", new Vector2(HudX + 22, 622), new Color(126, 145, 172), 2);
+        DrawText("ENTER INTERACTS", new Vector2(HudX + 22, 648), new Color(126, 145, 172), 2);
+        DrawText("R RESETS  ESC QUITS", new Vector2(HudX + 22, 674), new Color(126, 145, 172), 2);
     }
 
     private void DrawPanels()
@@ -766,8 +766,8 @@ public sealed class NotimaGame : Game
         }
 
         DrawPanel(PanelX, PanelY, PanelWidth, PanelHeight, new Color(15, 18, 29, 236));
-        DrawFrame(new RectangleF(PanelX, PanelY, PanelWidth, PanelHeight), new Color(255, 227, 147), 2);
-        DrawText(panelTitle, new Vector2(PanelX + 22, PanelY + 22), new Color(255, 236, 168), 3);
+        DrawFrame(new RectangleF(PanelX, PanelY, PanelWidth, PanelHeight), new Color(173, 145, 89), 2);
+        DrawText(panelTitle, new Vector2(PanelX + 22, PanelY + 22), new Color(188, 164, 109), 3);
 
         if (uiMode == UiMode.Encounter && encounter is not null)
         {
@@ -857,8 +857,8 @@ public sealed class NotimaGame : Game
             if (i == selectedEnemyIndex && IsEnemyTargetable(i))
             {
                 var highlight = new RectangleF(enemyTile.X + 8.0f, enemyTile.Y + 14.0f, enemyTile.Width - 16.0f, enemyTile.Height - 28.0f);
-                spriteBatch.Draw(whiteTexture, highlight, new Color(255, 212, 114, 42));
-                DrawFrame(highlight, new Color(255, 221, 132), 1);
+                spriteBatch.Draw(whiteTexture, highlight, new Color(142, 112, 64, 36));
+                DrawFrame(highlight, new Color(164, 132, 76), 1);
             }
 
             var offset = GetEnemyAttackOffset(i);
@@ -1326,10 +1326,10 @@ internal sealed class PartyState
     {
         if (Members.Count == 0)
         {
-            Members.Add(new PartyMember("AVA", new Color(255, 255, 255), memberHealth));
-            Members.Add(new PartyMember("BRI", new Color(181, 214, 255), memberHealth));
-            Members.Add(new PartyMember("CYR", new Color(255, 204, 214), memberHealth));
-            Members.Add(new PartyMember("DAS", new Color(255, 232, 174), memberHealth));
+            Members.Add(new PartyMember("AVA", new Color(176, 166, 156), memberHealth));
+            Members.Add(new PartyMember("BRI", new Color(97, 118, 142), memberHealth));
+            Members.Add(new PartyMember("CYR", new Color(124, 92, 100), memberHealth));
+            Members.Add(new PartyMember("DAS", new Color(129, 112, 76), memberHealth));
             return;
         }
 
