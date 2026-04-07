@@ -1671,7 +1671,7 @@ public sealed class NotimaGame : Game
         }
         else if (symbol is not '.' and not '*' and not '^' and not 'F')
         {
-            DrawOverworldBillboardFromFootprint(symbol, rect.Center.X, rect.Bottom, rect.Width * 0.42f, rect.Height, 0.0f);
+            DrawOverworldBillboardFromFootprint(viewport, symbol, rect.Center.X, rect.Bottom, rect.Width * 0.42f, rect.Height, 0.0f);
         }
     }
 
@@ -1694,7 +1694,7 @@ public sealed class NotimaGame : Game
         return map.Rows[gridY][gridX];
     }
 
-    private void DrawOverworldCellFeature(char symbol, float centerX, float baseY, int depth, bool centerLane, int variantSeed)
+    private void DrawOverworldCellFeature(RectangleF viewport, char symbol, float centerX, float baseY, int depth, bool centerLane, int variantSeed)
     {
         if (symbol is '.' or '~' or '=' or 'P')
         {
@@ -1717,7 +1717,7 @@ public sealed class NotimaGame : Game
             footprintHeight *= 1.45f;
         }
 
-        DrawOverworldBillboardFromFootprint(symbol, centerX, baseY, footprintWidth, footprintHeight, 0.0f, variantSeed);
+        DrawOverworldBillboardFromFootprint(viewport, symbol, centerX, baseY, footprintWidth, footprintHeight, 0.0f, variantSeed);
     }
 
     private void DrawOverworldFeatureField(RectangleF viewport, RectangleF ground, float cameraX, float cameraY, GridPoint forward, GridPoint right)
@@ -1752,7 +1752,7 @@ public sealed class NotimaGame : Game
                 }
 
                 var variantSeed = (cell.X * 73856093) ^ (cell.Y * 19349663) ^ symbol;
-                DrawOverworldCellFeature(symbol, screenX, baseY, projectedDepth, Math.Abs(localSide) < 0.45f, variantSeed);
+                DrawOverworldCellFeature(viewport, symbol, screenX, baseY, projectedDepth, Math.Abs(localSide) < 0.45f, variantSeed);
             }
         }
     }
@@ -2099,7 +2099,7 @@ public sealed class NotimaGame : Game
         }
     }
 
-    private void DrawOverworldBillboardFromFootprint(char symbol, float centerX, float groundBottom, float footprintWidth, float footprintHeight, float verticalLift, int variantSeed = 0)
+    private void DrawOverworldBillboardFromFootprint(RectangleF viewport, char symbol, float centerX, float groundBottom, float footprintWidth, float footprintHeight, float verticalLift, int variantSeed = 0)
     {
         if (symbol is '.' or '=' or 'P' or '~')
         {
@@ -2109,6 +2109,11 @@ public sealed class NotimaGame : Game
         var width = Math.Max(18.0f, footprintWidth * 1.24f);
         var height = Math.Max(26.0f, footprintHeight * 2.65f);
         var rect = new RectangleF(centerX - (width * 0.5f), (groundBottom + verticalLift) - height, width, height);
+
+        if (rect.Right < viewport.X || rect.X > viewport.Right || rect.Bottom < viewport.Y || rect.Y > viewport.Bottom)
+        {
+            return;
+        }
 
         switch (symbol)
         {
