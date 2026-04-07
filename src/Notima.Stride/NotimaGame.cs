@@ -9,6 +9,7 @@ namespace Notima.Stride;
 
 public sealed class NotimaGame : Game
 {
+    private const bool ShowProjectionDebug = true;
     private const float BaseWidth = 1280.0f;
     private const float BaseHeight = 720.0f;
     private const float MoveRepeatDelay = 0.16f;
@@ -173,6 +174,7 @@ public sealed class NotimaGame : Game
         spriteBatch.Begin(GraphicsContext);
         DrawMap();
         DrawHud();
+        DrawMinimapOverlay();
         DrawPanels();
         spriteBatch.End();
     }
@@ -214,6 +216,13 @@ public sealed class NotimaGame : Game
             return;
         }
 
+        if (Input.IsKeyPressed(Keys.F10))
+        {
+            ClearPendingMove();
+            EnterDungeon();
+            return;
+        }
+
         switch (uiMode)
         {
             case UiMode.Town:
@@ -249,31 +258,37 @@ public sealed class NotimaGame : Game
             return;
         }
 
-        var delta = GridPoint.Zero;
-        if (Input.IsKeyPressed(Keys.Up) || Input.IsKeyPressed(Keys.W))
+        if (Input.IsKeyPressed(Keys.Left) || Input.IsKeyPressed(Keys.A))
         {
-            delta = new GridPoint(0, -1);
-            facing = Direction.Up;
-        }
-        else if (Input.IsKeyPressed(Keys.Down) || Input.IsKeyPressed(Keys.S))
-        {
-            delta = new GridPoint(0, 1);
-            facing = Direction.Down;
-        }
-        else if (Input.IsKeyPressed(Keys.Left) || Input.IsKeyPressed(Keys.A))
-        {
-            delta = new GridPoint(-1, 0);
-            facing = Direction.Left;
-        }
-        else if (Input.IsKeyPressed(Keys.Right) || Input.IsKeyPressed(Keys.D))
-        {
-            delta = new GridPoint(1, 0);
-            facing = Direction.Right;
+            ClearPendingMove();
+            TurnLeft();
+            moveCooldown = MoveRepeatDelay;
+            statusLine = $"Facing {facing.ToString().ToLowerInvariant()}.";
+            return;
         }
 
-        if (delta != GridPoint.Zero)
+        if (Input.IsKeyPressed(Keys.Right) || Input.IsKeyPressed(Keys.D))
         {
-            HandleQueuedMove(delta, isDungeonMove: false);
+            ClearPendingMove();
+            TurnRight();
+            moveCooldown = MoveRepeatDelay;
+            statusLine = $"Facing {facing.ToString().ToLowerInvariant()}.";
+            return;
+        }
+
+        if (Input.IsKeyPressed(Keys.Up) || Input.IsKeyPressed(Keys.W))
+        {
+            ClearPendingMove();
+            moveCooldown = MoveRepeatDelay;
+            TryMove(GetForwardDelta());
+            return;
+        }
+
+        if (Input.IsKeyPressed(Keys.Down) || Input.IsKeyPressed(Keys.S))
+        {
+            ClearPendingMove();
+            moveCooldown = MoveRepeatDelay;
+            TryMove(GetBackwardDelta());
         }
     }
 
@@ -408,31 +423,37 @@ public sealed class NotimaGame : Game
             return;
         }
 
-        var delta = GridPoint.Zero;
-        if (Input.IsKeyPressed(Keys.Up) || Input.IsKeyPressed(Keys.W))
+        if (Input.IsKeyPressed(Keys.Left) || Input.IsKeyPressed(Keys.A))
         {
-            delta = new GridPoint(0, -1);
-            facing = Direction.Up;
-        }
-        else if (Input.IsKeyPressed(Keys.Down) || Input.IsKeyPressed(Keys.S))
-        {
-            delta = new GridPoint(0, 1);
-            facing = Direction.Down;
-        }
-        else if (Input.IsKeyPressed(Keys.Left) || Input.IsKeyPressed(Keys.A))
-        {
-            delta = new GridPoint(-1, 0);
-            facing = Direction.Left;
-        }
-        else if (Input.IsKeyPressed(Keys.Right) || Input.IsKeyPressed(Keys.D))
-        {
-            delta = new GridPoint(1, 0);
-            facing = Direction.Right;
+            ClearPendingMove();
+            TurnLeft();
+            moveCooldown = MoveRepeatDelay;
+            statusLine = $"Facing {facing.ToString().ToLowerInvariant()}.";
+            return;
         }
 
-        if (delta != GridPoint.Zero)
+        if (Input.IsKeyPressed(Keys.Right) || Input.IsKeyPressed(Keys.D))
         {
-            HandleQueuedMove(delta, isDungeonMove: true);
+            ClearPendingMove();
+            TurnRight();
+            moveCooldown = MoveRepeatDelay;
+            statusLine = $"Facing {facing.ToString().ToLowerInvariant()}.";
+            return;
+        }
+
+        if (Input.IsKeyPressed(Keys.Up) || Input.IsKeyPressed(Keys.W))
+        {
+            ClearPendingMove();
+            moveCooldown = MoveRepeatDelay;
+            TryMoveDungeon(GetForwardDelta());
+            return;
+        }
+
+        if (Input.IsKeyPressed(Keys.Down) || Input.IsKeyPressed(Keys.S))
+        {
+            ClearPendingMove();
+            moveCooldown = MoveRepeatDelay;
+            TryMoveDungeon(GetBackwardDelta());
         }
     }
 
@@ -516,7 +537,14 @@ public sealed class NotimaGame : Game
         hasPendingMove = true;
         pendingMoveDelta = delta;
         pendingMoveTarget = target;
-        statusLine = $"Confirm move to [{target.X},{target.Y}]";
+        if (isDungeonMove)
+        {
+            statusLine = $"Confirm move to [{target.X},{target.Y}]";
+        }
+        else
+        {
+            statusLine = $"Confirm {GetFacingLabelForDelta(delta)}.";
+        }
     }
 
     private void ClearPendingMove()
@@ -617,7 +645,8 @@ public sealed class NotimaGame : Game
 
     private void MaybeTriggerEncounter(TileDefinition tile)
     {
-        if (!tile.CanEncounter || random.NextDouble() > tile.EncounterChance)
+        var adjustedEncounterChance = tile.EncounterChance * 0.25;
+        if (!tile.CanEncounter || random.NextDouble() > adjustedEncounterChance)
         {
             return;
         }
@@ -1533,48 +1562,27 @@ public sealed class NotimaGame : Game
             return;
         }
 
-        DrawPanel(28, 28, 692, 664, new Color(26, 35, 49, 240));
-        DrawFrame(new RectangleF(28, 28, 692, 664), new Color(102, 124, 171), 2);
+        DrawOverworldCrawlerView();
+    }
 
-        var rows = dungeon is null ? map.Rows : dungeon.Rows;
-        var currentCell = dungeon is null ? playerCell : dungeonCell;
+    private void DrawOverworldCrawlerView()
+    {
+        var frame = new RectangleF(28, 28, 692, 664);
+        var view = new RectangleF(52, 52, 644, 548);
+        DrawPanel(frame.X, frame.Y, frame.Width, frame.Height, new Color(18, 22, 28, 244));
+        DrawFrame(frame, new Color(112, 120, 138), 2);
 
-        for (var y = 0; y < rows.Count; y++)
-        {
-            var row = rows[y];
-            for (var x = 0; x < row.Length; x++)
-            {
-                var symbol = row[x];
-                var destination = GetIsoTileDestination(x, y);
-                var tileSource = GetIsoTileSource(symbol);
-                spriteBatch.Draw(tileTexture, UiRect(destination), tileSource, Color.White, 0, Vector2.Zero);
-                if (dungeon is not null)
-                {
-                    DrawDungeonStoneFill(symbol, destination);
-                    DrawDungeonFeatureMarker(symbol, destination);
-                }
+        var currentTile = GetTileDefinition(map.Rows[playerCell.Y][playerCell.X]);
+        DrawText("OVERWORLD", new Vector2(view.X + 18, view.Y + 16), new Color(210, 194, 154), 2);
+        DrawText(currentTile.Name.ToUpperInvariant(), new Vector2(view.X + 198, view.Y + 16), new Color(140, 160, 180), 2);
+        DrawText($"FACING {facing.ToString().ToUpperInvariant()}", new Vector2(view.X + 438, view.Y + 16), new Color(138, 152, 174), 2);
 
-            }
-        }
-
-        if (hasPendingMove)
-        {
-            var previewDestination = GetIsoHighlightDestination(pendingMoveTarget.X, pendingMoveTarget.Y);
-            spriteBatch.Draw(whiteTexture, UiRect(previewDestination), new Color(178, 42, 42, 72));
-            DrawFrame(previewDestination, new Color(210, 66, 66), 3);
-        }
-
-        var cursorDestination = GetIsoHighlightDestination(currentCell.X, currentCell.Y);
-        spriteBatch.Draw(whiteTexture, UiRect(cursorDestination), new Color(156, 138, 78, 26));
-        DrawFrame(cursorDestination, new Color(170, 148, 84), 2);
-
-        var playerFrame = GetPlayerSourceFrame(0);
-        var playerDestination = GetIsoCharacterDestination(currentCell.X, currentCell.Y, 0.0f);
-
-        DrawPartyTrail(cursorDestination);
-        spriteBatch.Draw(whiteTexture, UiRect(new RectangleF(playerDestination.X + 10.0f, playerDestination.Y + playerDestination.Height - 6.0f, playerDestination.Width - 20.0f, 4.0f)), new Color(0, 0, 0, 82));
-        var playerSource = new RectangleF(playerFrame.X, playerFrame.Y, playerFrame.Width, playerFrame.Height);
-        spriteBatch.Draw(playerTexture, UiRect(playerDestination), playerSource, Color.White, 0, Vector2.Zero);
+        var viewport = new RectangleF(view.X + 18, view.Y + 46, view.Width - 36, 420);
+        DrawPanel(viewport.X, viewport.Y, viewport.Width, viewport.Height, new Color(10, 12, 18, 255));
+        DrawFrame(viewport, new Color(80, 88, 106), 2);
+        DrawOverworldEnvironment(viewport);
+        DrawOverworldInset(view);
+        DrawDungeonPortraitStrip(view);
     }
 
     private void DrawDungeonCrawlerView()
@@ -1590,17 +1598,259 @@ public sealed class NotimaGame : Game
         var viewport = new RectangleF(view.X + 18, view.Y + 46, view.Width - 36, 420);
         DrawPanel(viewport.X, viewport.Y, viewport.Width, viewport.Height, new Color(10, 12, 18, 255));
         DrawFrame(viewport, new Color(80, 88, 106), 2);
-        DrawDungeonEnvironment(viewport);
+        DrawCrawlerEnvironment(viewport, isDungeonView: true);
         DrawDungeonInset(view);
         DrawDungeonPortraitStrip(view);
     }
 
-    private void DrawDungeonEnvironment(RectangleF viewport)
+    private void DrawOverworldEnvironment(RectangleF viewport)
     {
+        var skyTop = new RectangleF(viewport.X, viewport.Y, viewport.Width, viewport.Height * 0.34f);
+        var skyMid = new RectangleF(viewport.X, skyTop.Bottom, viewport.Width, viewport.Height * 0.22f);
+        var ground = new RectangleF(viewport.X, skyMid.Bottom, viewport.Width, viewport.Bottom - skyMid.Bottom);
+        DrawPanel(skyTop.X, skyTop.Y, skyTop.Width, skyTop.Height, new Color(104, 154, 220));
+        DrawPanel(skyMid.X, skyMid.Y, skyMid.Width, skyMid.Height, new Color(142, 188, 234));
+        DrawPanel(ground.X, ground.Y, ground.Width, ground.Height, new Color(96, 104, 88));
+
+        DrawCloud(new RectangleF(viewport.X + 52.0f, viewport.Y + 26.0f, 104.0f, 28.0f));
+        DrawCloud(new RectangleF(viewport.X + 224.0f, viewport.Y + 44.0f, 132.0f, 34.0f));
+        DrawCloud(new RectangleF(viewport.Right - 186.0f, viewport.Y + 24.0f, 116.0f, 30.0f));
+
+        var horizonY = skyMid.Bottom - 6.0f;
+        DrawPanel(viewport.X, horizonY, viewport.Width, 6.0f, new Color(166, 158, 126, 120));
+        DrawOverworldCellField(viewport, ground, horizonY);
+    }
+
+    private void DrawOverworldCellField(RectangleF viewport, RectangleF ground, float horizonY)
+    {
+        var rows = 84;
+        var columns = 96;
+        var rowHeight = ground.Height / rows;
+        var columnWidth = viewport.Width / columns;
+        var cameraX = playerCell.X + 0.5f;
+        var cameraY = playerCell.Y + 0.5f;
+        var forward = GetForwardDelta();
+        var right = GetRightDelta();
+        const float nearDistance = 0.4f;
+        const float farDistance = 8.25f;
+        const float sideSpread = 0.82f;
+
+        for (var row = 0; row < rows; row++)
+        {
+            var y0 = ground.Y + (row * rowHeight);
+            var y1 = y0 + rowHeight + 1.0f;
+            var t0 = row / (float)rows;
+            var t1 = (row + 1) / (float)rows;
+            var distNear = nearDistance + ((1.0f - t1) * (1.0f - t1) * farDistance);
+            var distFar = nearDistance + ((1.0f - t0) * (1.0f - t0) * farDistance);
+            var halfWidthNear = distNear * sideSpread;
+            var halfWidthFar = distFar * sideSpread;
+
+            var startColumn = 0;
+            while (startColumn < columns)
+            {
+                var uStart = ((startColumn + 0.5f) / columns * 2.0f) - 1.0f;
+                var sample = SampleOverworldProjectedSymbol(cameraX, cameraY, forward, right, distNear, halfWidthNear, uStart);
+                var endColumn = startColumn + 1;
+                while (endColumn < columns)
+                {
+                    var u = ((endColumn + 0.5f) / columns * 2.0f) - 1.0f;
+                    if (SampleOverworldProjectedSymbol(cameraX, cameraY, forward, right, distNear, halfWidthNear, u) != sample)
+                    {
+                        break;
+                    }
+
+                    endColumn++;
+                }
+
+                var x0 = viewport.X + (startColumn * columnWidth);
+                var x1 = viewport.X + (endColumn * columnWidth);
+                var topLeft = x0;
+                var topRight = x1;
+                var bottomLeft = x0;
+                var bottomRight = x1;
+                DrawTrapezoid(topLeft, topRight, bottomLeft, bottomRight, y0, y1, GetOverworldSurfaceColor(sample));
+
+                if (sample is '=' or 'P')
+                {
+                    var center = (x0 + x1) * 0.5f;
+                    var topHalf = (x1 - x0) * 0.22f;
+                    var bottomHalf = (x1 - x0) * 0.22f;
+                    DrawTrapezoid(center - topHalf, center + topHalf, center - bottomHalf, center + bottomHalf, y0, y1, new Color(128, 100, 72, 236));
+                }
+                startColumn = endColumn;
+            }
+        }
+
+        DrawCurrentCellForeground(viewport, ground);
+
+        DrawOverworldFeatureField(viewport, ground, cameraX, cameraY, forward, right);
+    }
+
+    private Color GetOverworldSurfaceColor(char symbol) => symbol switch
+    {
+        '~' => new Color(52, 96, 158, 236),
+        '=' or 'P' => new Color(144, 120, 88, 222),
+        'F' => new Color(92, 106, 82, 216),
+        '^' => new Color(98, 100, 108, 224),
+        '*' => new Color(86, 106, 78, 220),
+        _ => new Color(112, 108, 84, 208),
+    };
+
+    private void DrawCurrentCellForeground(RectangleF viewport, RectangleF ground)
+    {
+        var symbol = map.Rows[playerCell.Y][playerCell.X];
+        var rect = new RectangleF(viewport.Center.X - 112.0f, ground.Bottom - 84.0f, 224.0f, 84.0f);
+        DrawPanel(rect.X, rect.Y, rect.Width, rect.Height, GetOverworldSurfaceColor(symbol));
+
+        if (symbol is '=' or 'P')
+        {
+            DrawPanel(rect.Center.X - 26.0f, rect.Y, 52.0f, rect.Height, new Color(128, 100, 72, 236));
+        }
+        else if (symbol == '~')
+        {
+            DrawPanel(rect.X + 8.0f, rect.Y + 12.0f, rect.Width - 16.0f, 8.0f, new Color(120, 170, 220, 44));
+        }
+        else if (symbol is not '.' and not '*' and not '^' and not 'F')
+        {
+            DrawOverworldBillboardFromFootprint(symbol, rect.Center.X, rect.Bottom, rect.Width * 0.42f, rect.Height, 0.0f);
+        }
+    }
+
+    private char SampleOverworldProjectedSymbol(float cameraX, float cameraY, GridPoint forward, GridPoint right, float distance, float halfWidth, float u)
+    {
+        var worldX = cameraX + (forward.X * distance) + (right.X * halfWidth * u);
+        var worldY = cameraY + (forward.Y * distance) + (right.Y * halfWidth * u);
+        return GetOverworldProjectedSymbol(worldX, worldY);
+    }
+
+    private char GetOverworldProjectedSymbol(float worldX, float worldY)
+    {
+        var gridX = (int)MathF.Floor(worldX);
+        var gridY = (int)MathF.Floor(worldY);
+        if (gridX < 0 || gridY < 0 || gridY >= map.Rows.Count || gridX >= map.Rows[gridY].Length)
+        {
+            return '~';
+        }
+
+        return map.Rows[gridY][gridX];
+    }
+
+    private void DrawOverworldCellFeature(char symbol, float centerX, float baseY, int depth, bool centerLane, int variantSeed)
+    {
+        if (symbol is '.' or '~' or '=' or 'P')
+        {
+            return;
+        }
+
+        var depthScales = new[] { 0.88f, 0.66f, 0.48f, 0.34f };
+        var scale = depthScales[Math.Clamp(depth - 1, 0, depthScales.Length - 1)] * (centerLane ? 1.0f : 0.94f);
+        var footprintWidth = 62.0f * scale;
+        var footprintHeight = 42.0f * scale;
+
+        if (symbol == '^')
+        {
+            footprintWidth *= centerLane ? 2.6f : 2.1f;
+            footprintHeight *= centerLane ? 2.3f : 1.9f;
+        }
+        else if (symbol == '*')
+        {
+            footprintWidth *= 1.35f;
+            footprintHeight *= 1.45f;
+        }
+
+        DrawOverworldBillboardFromFootprint(symbol, centerX, baseY, footprintWidth, footprintHeight, 0.0f, variantSeed);
+    }
+
+    private void DrawOverworldFeatureField(RectangleF viewport, RectangleF ground, float cameraX, float cameraY, GridPoint forward, GridPoint right)
+    {
+        var drawn = new System.Collections.Generic.HashSet<GridPoint>();
+        for (var depth = 6; depth >= 1; depth--)
+        {
+            for (var side = -6; side <= 6; side++)
+            {
+                var cell = GetRelativeCell(side, depth, isDungeonView: false);
+                if (cell.X < 0 || cell.Y < 0 || cell.Y >= map.Rows.Count || cell.X >= map.Rows[cell.Y].Length || !drawn.Add(cell))
+                {
+                    continue;
+                }
+
+                var symbol = map.Rows[cell.Y][cell.X];
+                if (symbol is '.' or '~' or '=' or 'P')
+                {
+                    continue;
+                }
+
+                var cellCenterX = cell.X + 0.5f;
+                var cellCenterY = cell.Y + 0.5f;
+                var dx = cellCenterX - cameraX;
+                var dy = cellCenterY - cameraY;
+                var localForward = (dx * forward.X) + (dy * forward.Y);
+                var localSide = (dx * right.X) + (dy * right.Y);
+
+                if (localForward < 0.35f || !TryProjectOverworldFeature(viewport, ground, localForward, localSide, out var screenX, out var baseY, out var projectedDepth))
+                {
+                    continue;
+                }
+
+                var variantSeed = (cell.X * 73856093) ^ (cell.Y * 19349663) ^ symbol;
+                DrawOverworldCellFeature(symbol, screenX, baseY, projectedDepth, Math.Abs(localSide) < 0.45f, variantSeed);
+            }
+        }
+    }
+
+    private bool TryProjectOverworldFeature(RectangleF viewport, RectangleF ground, float localForward, float localSide, out float screenX, out float baseY, out int depth)
+    {
+        const float nearDistance = 0.4f;
+        const float farDistance = 8.25f;
+        const float sideSpread = 0.82f;
+
+        if (localForward < nearDistance || localForward > nearDistance + farDistance)
+        {
+            screenX = 0.0f;
+            baseY = 0.0f;
+            depth = 1;
+            return false;
+        }
+
+        var normalizedDistance = Math.Clamp((localForward - nearDistance) / farDistance, 0.0f, 1.0f);
+        var t = 1.0f - MathF.Sqrt(normalizedDistance);
+        var halfWidth = Math.Max(0.12f, localForward * sideSpread);
+        var u = localSide / halfWidth;
+        if (MathF.Abs(u) > 1.25f)
+        {
+            screenX = 0.0f;
+            baseY = 0.0f;
+            depth = 1;
+            return false;
+        }
+
+        screenX = viewport.Center.X + (u * viewport.Width * 0.5f);
+        baseY = ground.Y + (t * ground.Height);
+        depth = Math.Clamp((int)MathF.Round(localForward), 1, 4);
+        return true;
+    }
+
+    private void DrawCrawlerEnvironment(RectangleF viewport, bool isDungeonView)
+    {
+        if (isDungeonView)
+        {
+            DrawDungeonRaycastEnvironment(viewport);
+
+            if (hasPendingMove)
+            {
+                DrawCrawlerQueuedMoveIndicator(viewport, isDungeonView);
+            }
+
+            return;
+        }
+
         var ceilingRect = new RectangleF(viewport.X, viewport.Y, viewport.Width, viewport.Height * 0.47f);
         var floorRect = new RectangleF(viewport.X, viewport.Y + (viewport.Height * 0.47f), viewport.Width, viewport.Height * 0.53f);
-        spriteBatch.Draw(grimCeilingTexture, UiRect(ceilingRect), Color.White);
-        spriteBatch.Draw(grimFloorTexture, UiRect(floorRect), Color.White);
+        var ceilingTint = new Color(110, 126, 148);
+        var floorTint = new Color(128, 118, 96);
+        spriteBatch.Draw(grimCeilingTexture, UiRect(ceilingRect), ceilingTint);
+        spriteBatch.Draw(grimFloorTexture, UiRect(floorRect), floorTint);
 
         var portals = new[]
         {
@@ -1615,53 +1865,343 @@ public sealed class NotimaGame : Game
         {
             var portal = portals[depth];
             var next = depth == portals.Length - 1 ? portal : portals[depth + 1];
+            var forward = GetRelativeCell(0, depth + 1, isDungeonView);
+            var forwardSymbol = GetCrawlerCellSymbol(forward, isDungeonView);
+            var frontBlocked = IsBlockedCrawlerSymbol(forwardSymbol, isDungeonView);
 
-            var forward = GetDungeonRelativeCell(0, depth + 1);
-            var forwardSymbol = GetDungeonCellSymbol(forward);
-            var frontBlocked = IsBlockedDungeonSymbol(forwardSymbol);
-
-            var leftCell = GetDungeonRelativeCell(-1, depth);
-            var rightCell = GetDungeonRelativeCell(1, depth);
-            if (IsBlockedDungeonSymbol(GetDungeonCellSymbol(leftCell)))
+            var leftCell = GetRelativeCell(-1, depth, isDungeonView);
+            var rightCell = GetRelativeCell(1, depth, isDungeonView);
+            var leftSymbol = GetCrawlerCellSymbol(leftCell, isDungeonView);
+            var rightSymbol = GetCrawlerCellSymbol(rightCell, isDungeonView);
+            if (IsBlockedCrawlerSymbol(leftSymbol, isDungeonView))
             {
                 var leftWall = new RectangleF(portal.X, next.Y, Math.Max(28.0f, next.X - portal.X + 14.0f), next.Height);
-                spriteBatch.Draw(grimWallTexture, UiRect(leftWall), Color.White);
+                spriteBatch.Draw(grimWallTexture, UiRect(leftWall), GetCrawlerWallTint(leftSymbol, isDungeonView));
                 DrawFrame(leftWall, new Color(42, 40, 46), 2);
             }
 
-            if (IsBlockedDungeonSymbol(GetDungeonCellSymbol(rightCell)))
+            if (IsBlockedCrawlerSymbol(rightSymbol, isDungeonView))
             {
                 var rightWall = new RectangleF(next.Right - 14.0f, next.Y, Math.Max(28.0f, portal.Right - next.Right + 14.0f), next.Height);
-                spriteBatch.Draw(grimWallTexture, UiRect(rightWall), Color.White);
+                spriteBatch.Draw(grimWallTexture, UiRect(rightWall), GetCrawlerWallTint(rightSymbol, isDungeonView));
                 DrawFrame(rightWall, new Color(42, 40, 46), 2);
             }
 
             if (frontBlocked)
             {
-                spriteBatch.Draw(grimWallTexture, UiRect(portal), Color.White);
+                spriteBatch.Draw(grimWallTexture, UiRect(portal), GetCrawlerWallTint(forwardSymbol, isDungeonView));
                 DrawFrame(portal, new Color(30, 28, 32), 3);
-                DrawDungeonFeatureBillboard(forwardSymbol, portal, depth);
+                DrawCrawlerFeatureBillboard(forwardSymbol, portal, depth, isDungeonView);
                 break;
             }
 
-            DrawDungeonFeatureBillboard(forwardSymbol, portal, depth);
+            DrawCrawlerFeatureBillboard(forwardSymbol, portal, depth, isDungeonView);
         }
 
         if (hasPendingMove)
         {
-            DrawDungeonQueuedMoveIndicator(viewport);
+            DrawCrawlerQueuedMoveIndicator(viewport, isDungeonView);
         }
     }
 
-    private void DrawDungeonQueuedMoveIndicator(RectangleF viewport)
+    private void DrawDungeonRaycastEnvironment(RectangleF viewport)
+    {
+        var ceilingRect = new RectangleF(viewport.X, viewport.Y, viewport.Width, viewport.Height * 0.42f);
+        var floorRect = new RectangleF(viewport.X, ceilingRect.Bottom, viewport.Width, viewport.Bottom - ceilingRect.Bottom);
+        DrawPanel(ceilingRect.X, ceilingRect.Y, ceilingRect.Width, ceilingRect.Height, new Color(16, 18, 24));
+        DrawPanel(floorRect.X, floorRect.Y, floorRect.Width, floorRect.Height, new Color(40, 38, 36));
+        DrawPanel(viewport.X, ceilingRect.Bottom - 4.0f, viewport.Width, 4.0f, new Color(74, 70, 64));
+        DrawPanel(viewport.X, floorRect.Y, viewport.Width, 2.0f, new Color(110, 100, 88));
+
+        var columns = 180;
+        var columnWidth = viewport.Width / columns;
+        var player = new Vector2(dungeonCell.X + 0.5f, dungeonCell.Y + 0.5f);
+        var forward = new Vector2(GetForwardDelta().X, GetForwardDelta().Y);
+        var right = new Vector2(GetRightDelta().X, GetRightDelta().Y);
+        var wallDistances = new float[columns];
+        Array.Fill(wallDistances, 99.0f);
+
+        for (var column = 0; column < columns; column++)
+        {
+            var u = (((column + 0.5f) / columns) * 2.0f) - 1.0f;
+            var ray = forward + (right * (u * 0.8f));
+            ray.Normalize();
+            var rayStep = new Vector2(ray.X * 0.035f, ray.Y * 0.035f);
+            var sample = player;
+            var hitSymbol = '.';
+            var hitDistance = 8.0f;
+
+            for (var distance = 0.08f; distance <= 8.0f; distance += 0.035f)
+            {
+                sample += rayStep;
+                var point = new GridPoint((int)MathF.Floor(sample.X), (int)MathF.Floor(sample.Y));
+                var symbol = GetCrawlerCellSymbol(point, isDungeonView: true);
+                if (IsBlockedCrawlerSymbol(symbol, true))
+                {
+                    hitSymbol = symbol;
+                    hitDistance = distance;
+                    break;
+                }
+            }
+
+            wallDistances[column] = hitDistance;
+            var correctedDistance = hitDistance * Math.Max(0.2f, Vector2.Dot(ray, forward));
+            var wallHeight = Math.Min(viewport.Height * 0.92f, viewport.Height / Math.Max(0.28f, correctedDistance * 0.72f));
+            var wallTop = ceilingRect.Bottom - (wallHeight * 0.42f);
+            var wallBottom = wallTop + wallHeight;
+            var x = viewport.X + (column * columnWidth);
+            var wallColor = hitSymbol == 'x'
+                ? new Color(96, 80, 68)
+                : new Color(82, 80, 86);
+            var shade = Math.Clamp(1.0f - (correctedDistance / 9.0f), 0.34f, 1.0f);
+            wallColor = new Color(
+                (byte)(wallColor.R * shade),
+                (byte)(wallColor.G * shade),
+                (byte)(wallColor.B * shade));
+
+            DrawPanel(x, wallTop, columnWidth + 1.0f, wallHeight, wallColor);
+            if (column % 6 == 0)
+            {
+                DrawPanel(x, wallTop, 1.0f, wallHeight, new Color(32, 32, 38, 86));
+            }
+            if (((int)(wallTop + wallHeight)) % 26 < 2)
+            {
+                DrawPanel(x, wallBottom - 2.0f, columnWidth + 1.0f, 2.0f, new Color(26, 26, 32, 86));
+            }
+        }
+
+        DrawDungeonFeatureSprites(viewport, ceilingRect.Bottom, floorRect.Bottom, player, forward, right, wallDistances, columns);
+    }
+
+    private void DrawDungeonFeatureSprites(RectangleF viewport, float horizonY, float floorBottom, Vector2 player, Vector2 forward, Vector2 right, float[] wallDistances, int columns)
     {
         if (dungeon is null)
         {
             return;
         }
 
-        var dx = pendingMoveTarget.X - dungeonCell.X;
-        var dy = pendingMoveTarget.Y - dungeonCell.Y;
+        var drawn = new System.Collections.Generic.HashSet<GridPoint>();
+        for (var depth = 6; depth >= 1; depth--)
+        {
+            for (var side = -4; side <= 4; side++)
+            {
+                var cell = GetRelativeCell(side, depth, isDungeonView: true);
+                if (!drawn.Add(cell))
+                {
+                    continue;
+                }
+
+                var symbol = GetCrawlerCellSymbol(cell, true);
+                if (symbol is '.' or '#' or 'M' or 'B')
+                {
+                    continue;
+                }
+
+                var cellCenter = new Vector2(cell.X + 0.5f, cell.Y + 0.5f);
+                var delta = cellCenter - player;
+                var localForward = Vector2.Dot(delta, forward);
+                var localSide = Vector2.Dot(delta, right);
+                if (localForward <= 0.2f)
+                {
+                    continue;
+                }
+
+                var normalizedSide = localSide / Math.Max(0.16f, localForward * 0.8f);
+                if (MathF.Abs(normalizedSide) > 1.1f)
+                {
+                    continue;
+                }
+
+                var screenX = viewport.Center.X + (normalizedSide * viewport.Width * 0.5f);
+                var columnIndex = Math.Clamp((int)(((screenX - viewport.X) / viewport.Width) * columns), 0, columns - 1);
+                if (localForward >= wallDistances[columnIndex] - 0.18f)
+                {
+                    continue;
+                }
+
+                var scale = Math.Clamp(1.0f / localForward, 0.18f, 1.0f);
+                var height = 42.0f + (viewport.Height * 0.26f * scale);
+                var width = 32.0f + (viewport.Width * 0.08f * scale);
+                var baseY = floorBottom - (viewport.Height * (0.1f + (0.42f / Math.Max(0.6f, localForward))));
+                var dest = new RectangleF(screenX - (width * 0.5f), baseY - height, width, height);
+                DrawDungeonProjectedFeature(symbol, dest, depth);
+            }
+        }
+    }
+
+    private void DrawOverworldTerrainSpans(RectangleF viewport, float horizonY, RectangleF ground, float[] laneOffsets, float[] baseYs)
+    {
+        var cellTopWidths = new[] { 16.0f, 26.0f, 42.0f, 66.0f };
+        var cellBottomWidths = new[] { 28.0f, 44.0f, 68.0f, 102.0f };
+        var bandTops = new[] { horizonY + 8.0f, ground.Y + 30.0f, ground.Y + 78.0f, ground.Y + 146.0f };
+        var bandBottoms = new[] { ground.Y + 56.0f, ground.Y + 118.0f, ground.Y + 206.0f, ground.Bottom - 6.0f };
+
+        for (var depth = 1; depth <= 4; depth++)
+        {
+            var sideSymbols = new char[5];
+            for (var i = 0; i < 5; i++)
+            {
+                sideSymbols[i] = GetCrawlerCellSymbol(GetRelativeCell(i - 2, depth, isDungeonView: false), isDungeonView: false);
+            }
+
+            var waterCount = sideSymbols.Count(c => c == '~');
+            var centerSymbol = sideSymbols[2];
+
+            if (waterCount >= 3)
+            {
+                DrawTrapezoid(viewport.X, viewport.Right, viewport.X, viewport.Right, bandTops[depth - 1], bandBottoms[depth - 1], new Color(74, 106, 146, 220));
+                DrawTrapezoid(viewport.X + 12.0f, viewport.Right - 12.0f, viewport.X + 24.0f, viewport.Right - 24.0f, bandTops[depth - 1] + ((bandBottoms[depth - 1] - bandTops[depth - 1]) * 0.18f), bandTops[depth - 1] + ((bandBottoms[depth - 1] - bandTops[depth - 1]) * 0.32f), new Color(184, 210, 228, 76));
+                continue;
+            }
+
+            if (centerSymbol is '=' or 'P')
+            {
+                DrawOverworldSpanGroups(viewport, depth, laneOffsets[depth - 1], bandTops[depth - 1], bandBottoms[depth - 1], cellTopWidths[depth - 1] * 1.8f, cellBottomWidths[depth - 1] * 2.15f, new[] {'.','.',centerSymbol,'.','.'}, '=','P');
+            }
+
+            DrawOverworldSpanGroups(viewport, depth, laneOffsets[depth - 1], bandTops[depth - 1], bandBottoms[depth - 1], cellTopWidths[depth - 1], cellBottomWidths[depth - 1], sideSymbols, '~');
+        }
+
+        DrawPanel(viewport.Center.X - 2.0f, horizonY + 18.0f, 4.0f, ground.Bottom - horizonY - 24.0f, new Color(166, 148, 116, 56));
+    }
+
+    private void DrawOverworldSpanGroups(RectangleF viewport, int depth, float laneOffset, float bandTop, float bandBottom, float cellTopWidth, float cellBottomWidth, char[] sideSymbols, params char[] matchSymbols)
+    {
+        var side = -2;
+        while (side <= 2)
+        {
+            if (Array.IndexOf(matchSymbols, sideSymbols[side + 2]) < 0)
+            {
+                side++;
+                continue;
+            }
+
+            var start = side;
+            while (side <= 2 && Array.IndexOf(matchSymbols, sideSymbols[side + 2]) >= 0)
+            {
+                side++;
+            }
+
+            var end = side - 1;
+            var topOffset = laneOffset * 0.56f;
+            var topLeft = viewport.Center.X + (start * topOffset) - (cellTopWidth * 0.5f);
+            var topRight = viewport.Center.X + (end * topOffset) + (cellTopWidth * 0.5f);
+            var bottomLeft = viewport.Center.X + (start * laneOffset) - (cellBottomWidth * 0.5f);
+            var bottomRight = viewport.Center.X + (end * laneOffset) + (cellBottomWidth * 0.5f);
+            if (matchSymbols[0] == '~')
+            {
+                DrawTrapezoid(topLeft, topRight, bottomLeft, bottomRight, bandTop, bandBottom, new Color(74, 106, 146, 220));
+                DrawTrapezoid(topLeft + 4.0f, topRight - 4.0f, bottomLeft + 8.0f, bottomRight - 8.0f, bandTop + ((bandBottom - bandTop) * 0.18f), bandTop + ((bandBottom - bandTop) * 0.32f), new Color(184, 210, 228, 76));
+            }
+            else
+            {
+                DrawTrapezoid(topLeft, topRight, bottomLeft, bottomRight, bandTop, bandBottom, new Color(124, 98, 72, 214));
+                DrawTrapezoid(topLeft, topRight, bottomLeft, bottomRight, bandTop, bandTop + 1.0f, new Color(88, 70, 48));
+            }
+        }
+    }
+
+    private void DrawOverworldSideWaterFields(RectangleF viewport, float horizonY, float groundBottom)
+    {
+        var leftWater = 0;
+        var rightWater = 0;
+        for (var depth = 1; depth <= 4; depth++)
+        {
+            for (var side = -2; side <= -1; side++)
+            {
+                if (GetCrawlerCellSymbol(GetRelativeCell(side, depth, isDungeonView: false), isDungeonView: false) == '~')
+                {
+                    leftWater++;
+                }
+            }
+
+            for (var side = 1; side <= 2; side++)
+            {
+                if (GetCrawlerCellSymbol(GetRelativeCell(side, depth, isDungeonView: false), isDungeonView: false) == '~')
+                {
+                    rightWater++;
+                }
+            }
+        }
+
+        if (leftWater >= 4)
+        {
+            DrawTrapezoid(viewport.X, viewport.Center.X - 38.0f, viewport.X - 18.0f, viewport.Center.X - 126.0f, horizonY + 8.0f, groundBottom - 12.0f, new Color(74, 106, 146, 196));
+            DrawTrapezoid(viewport.X + 12.0f, viewport.Center.X - 62.0f, viewport.X + 28.0f, viewport.Center.X - 150.0f, horizonY + 46.0f, horizonY + 88.0f, new Color(184, 210, 228, 58));
+        }
+
+        if (rightWater >= 4)
+        {
+            DrawTrapezoid(viewport.Center.X + 38.0f, viewport.Right, viewport.Center.X + 126.0f, viewport.Right + 18.0f, horizonY + 8.0f, groundBottom - 12.0f, new Color(74, 106, 146, 196));
+            DrawTrapezoid(viewport.Center.X + 62.0f, viewport.Right - 12.0f, viewport.Center.X + 150.0f, viewport.Right - 28.0f, horizonY + 46.0f, horizonY + 88.0f, new Color(184, 210, 228, 58));
+        }
+    }
+
+    private void DrawTrapezoid(float topLeft, float topRight, float bottomLeft, float bottomRight, float topY, float bottomY, Color color)
+    {
+        var height = Math.Max(1.0f, bottomY - topY);
+        var steps = Math.Max(1, (int)MathF.Ceiling(height));
+        for (var i = 0; i < steps; i++)
+        {
+            var t = i / Math.Max(1.0f, steps - 1.0f);
+            var y = topY + (t * height);
+            var left = topLeft + ((bottomLeft - topLeft) * t);
+            var right = topRight + ((bottomRight - topRight) * t);
+            DrawPanel(left, y, Math.Max(1.0f, right - left), 1.4f, color);
+        }
+    }
+
+    private void DrawOverworldBillboardFromFootprint(char symbol, float centerX, float groundBottom, float footprintWidth, float footprintHeight, float verticalLift, int variantSeed = 0)
+    {
+        if (symbol is '.' or '=' or 'P' or '~')
+        {
+            return;
+        }
+
+        var width = Math.Max(18.0f, footprintWidth * 1.24f);
+        var height = Math.Max(26.0f, footprintHeight * 2.65f);
+        var rect = new RectangleF(centerX - (width * 0.5f), (groundBottom + verticalLift) - height, width, height);
+
+        switch (symbol)
+        {
+            case '*':
+                DrawTreeSilhouette(rect, variantSeed);
+                break;
+            case '^':
+                DrawMountainSilhouette(rect);
+                break;
+            case 'F':
+                DrawFenSilhouette(rect);
+                break;
+            case 'T':
+                DrawTownGateSilhouette(rect);
+                break;
+            case 'H':
+                DrawHarborSilhouette(rect);
+                break;
+            case 'K':
+                DrawKeepSilhouette(rect);
+                break;
+            case 'R':
+                DrawRuinSilhouette(rect);
+                break;
+            case 'S':
+                DrawShrineSilhouette(rect);
+                break;
+            case 'C':
+                DrawCampSilhouette(rect);
+                break;
+            case 'D':
+                DrawDungeonMouthSilhouette(rect);
+                break;
+        }
+    }
+
+    private void DrawCrawlerQueuedMoveIndicator(RectangleF viewport, bool isDungeonView)
+    {
+        var currentCell = isDungeonView ? dungeonCell : playerCell;
+        var dx = pendingMoveTarget.X - currentCell.X;
+        var dy = pendingMoveTarget.Y - currentCell.Y;
         var indicator = new RectangleF(viewport.Center.X - 46.0f, viewport.Bottom - 82.0f, 92.0f, 46.0f);
         if (dx == 0 && dy == 0)
         {
@@ -1685,6 +2225,37 @@ public sealed class NotimaGame : Game
         DrawFrame(indicator, new Color(220, 86, 86), 2);
     }
 
+    private void DrawOverworldInset(RectangleF view)
+    {
+        var inset = new RectangleF(view.X + 18, view.Bottom - 126, 164, 94);
+        DrawPanel(inset.X, inset.Y, inset.Width, inset.Height, new Color(16, 18, 24, 230));
+        DrawFrame(inset, new Color(86, 94, 116), 1);
+        DrawText("SURVEY", new Vector2(inset.X + 8, inset.Y + 8), new Color(168, 176, 194), 1);
+
+        const float cell = 22.0f;
+        for (var gy = -1; gy <= 1; gy++)
+        {
+            for (var gx = -2; gx <= 2; gx++)
+            {
+                var point = new GridPoint(playerCell.X + gx, playerCell.Y + gy);
+                var symbol = GetCrawlerCellSymbol(point, isDungeonView: false);
+                var rect = new RectangleF(inset.X + 18 + ((gx + 2) * (cell + 4)), inset.Y + 28 + ((gy + 1) * (cell + 4)), cell, cell);
+                var color = GetOverworldInsetColor(symbol);
+                if (point == playerCell)
+                {
+                    color = new Color(168, 138, 84);
+                }
+                else if (hasPendingMove && point == pendingMoveTarget)
+                {
+                    color = new Color(176, 56, 56);
+                }
+
+                DrawPanel(rect.X, rect.Y, rect.Width, rect.Height, color);
+                DrawFrame(rect, new Color(12, 14, 18), 1);
+            }
+        }
+    }
+
     private void DrawDungeonInset(RectangleF view)
     {
         if (dungeon is null)
@@ -1703,9 +2274,9 @@ public sealed class NotimaGame : Game
             for (var gx = -2; gx <= 2; gx++)
             {
                 var point = new GridPoint(dungeonCell.X + gx, dungeonCell.Y + gy);
-                var symbol = GetDungeonCellSymbol(point);
+                var symbol = GetCrawlerCellSymbol(point, isDungeonView: true);
                 var rect = new RectangleF(inset.X + 18 + ((gx + 2) * (cell + 4)), inset.Y + 28 + ((gy + 1) * (cell + 4)), cell, cell);
-                var color = IsBlockedDungeonSymbol(symbol) ? new Color(60, 62, 68) : new Color(42, 48, 60);
+                var color = IsBlockedCrawlerSymbol(symbol, isDungeonView: true) ? new Color(60, 62, 68) : new Color(42, 48, 60);
                 if (point == dungeonCell)
                 {
                     color = new Color(168, 138, 84);
@@ -1738,45 +2309,283 @@ public sealed class NotimaGame : Game
         }
     }
 
-    private void DrawDungeonFeatureBillboard(char symbol, RectangleF portal, int depth)
+    private void DrawCrawlerFeatureBillboard(char symbol, RectangleF portal, int depth, bool isDungeonView)
     {
-        if (symbol is '.' or '#')
+        if (symbol is '.' or '#' or '~' or '^')
         {
             return;
         }
 
         var scale = 1.0f - (depth * 0.16f);
-        var width = portal.Width * MathF.Max(0.22f, 0.4f * scale);
-        var height = portal.Height * MathF.Max(0.24f, 0.48f * scale);
-        var dest = new RectangleF(portal.Center.X - (width * 0.5f), portal.Bottom - height - 8.0f, width, height);
+        var width = portal.Width * MathF.Max(0.56f, 0.88f * scale);
+        var height = portal.Height * MathF.Max(0.64f, 0.98f * scale);
+        var dest = new RectangleF(portal.Center.X - (width * 0.5f), portal.Bottom - height - 2.0f, width, height);
 
-        if (symbol is 'M' or 'B')
+        if (symbol is 'M' or 'B' || (!isDungeonView && symbol is '*'))
         {
-            var row = symbol == 'B' ? 2 : 0;
+            var row = symbol switch
+            {
+                'B' => 2,
+                '*' => 1,
+                _ => 0,
+            };
             var frame = ((int)(totalTime * 4.0f)) % 2;
             var source = new RectangleF(frame * 128, row * 128, 128, 128);
             spriteBatch.Draw(grimCreatureTexture, UiRect(dest), source, Color.White, 0, Vector2.Zero);
             return;
         }
 
-        var color = symbol switch
+        if (isDungeonView)
         {
-            '<' => new Color(214, 198, 154),
-            '>' => new Color(184, 168, 136),
-            'G' => new Color(194, 152, 88),
-            'L' => new Color(112, 150, 170),
-            'k' => new Color(186, 160, 92),
-            'x' => new Color(110, 94, 82),
-            _ => new Color(160, 122, 96),
-        };
+            DrawDungeonProjectedFeature(symbol, dest, depth);
+            return;
+        }
 
-        DrawPanel(dest.X, dest.Y, dest.Width, dest.Height, new Color(0, 0, 0, 40));
+        if (!isDungeonView && symbol is '=' or 'P')
+        {
+            var roadRect = new RectangleF(portal.Center.X - (portal.Width * 0.12f), portal.Bottom - (portal.Height * 0.32f), portal.Width * 0.24f, portal.Height * 0.28f);
+            DrawPanel(roadRect.X, roadRect.Y, roadRect.Width, roadRect.Height, new Color(118, 92, 66, 180));
+            DrawFrame(roadRect, new Color(86, 68, 44), 1);
+            return;
+        }
+
+        var color = GetCrawlerFeatureColor(symbol, isDungeonView);
+        var label = GetCrawlerFeatureLabel(symbol, isDungeonView);
+        if (string.IsNullOrEmpty(label))
+        {
+            return;
+        }
+
+        DrawPanel(dest.X, dest.Y, dest.Width, dest.Height, new Color(0, 0, 0, 60));
         DrawFrame(dest, new Color(42, 38, 34), 1);
-        DrawText(GetDungeonFeatureLabel(symbol), new Vector2(dest.X + 10, dest.Center.Y - 6), color, 2);
+        DrawText(label, new Vector2(dest.X + 10, dest.Center.Y - 6), color, 2);
     }
 
-    private GridPoint GetDungeonRelativeCell(int side, int forward)
+    private void DrawDungeonWallSurface(RectangleF rect, char symbol, int depth, bool frontFace)
     {
+        var baseColor = symbol == 'x' ? new Color(88, 72, 64) : new Color(78, 76, 82);
+        var midColor = symbol == 'x' ? new Color(104, 86, 74) : new Color(92, 90, 96);
+        var mortar = new Color(42, 40, 46);
+        DrawPanel(rect.X, rect.Y, rect.Width, rect.Height, baseColor);
+
+        var rows = Math.Max(3, (int)(rect.Height / 26.0f));
+        var rowHeight = rect.Height / rows;
+        for (var row = 0; row < rows; row++)
+        {
+            var y = rect.Y + (row * rowHeight);
+            DrawPanel(rect.X, y, rect.Width, 2.0f, mortar);
+            var brickOffset = row % 2 == 0 ? 0.0f : rect.Width * 0.12f;
+            var columns = Math.Max(2, (int)(rect.Width / 36.0f));
+            var brickWidth = rect.Width / columns;
+            for (var col = 0; col < columns; col++)
+            {
+                var x = rect.X + (col * brickWidth) + brickOffset;
+                if (x >= rect.Right - 3.0f)
+                {
+                    break;
+                }
+
+                DrawPanel(x, y + 2.0f, Math.Min(brickWidth - 2.0f, rect.Right - x), Math.Max(4.0f, rowHeight - 3.0f), (col + row + depth) % 2 == 0 ? midColor : baseColor);
+            }
+        }
+
+        DrawPanel(rect.X, rect.Y, rect.Width, Math.Max(4.0f, rect.Height * 0.08f), new Color(110, 106, 102, 90));
+        DrawPanel(rect.X, rect.Bottom - Math.Max(8.0f, rect.Height * 0.14f), rect.Width, Math.Max(8.0f, rect.Height * 0.14f), new Color(22, 22, 28, 84));
+        DrawPanel(rect.X, rect.Y, Math.Max(6.0f, rect.Width * 0.06f), rect.Height, new Color(26, 26, 32, frontFace ? 72 : 48));
+        DrawPanel(rect.Right - Math.Max(6.0f, rect.Width * 0.06f), rect.Y, Math.Max(6.0f, rect.Width * 0.06f), rect.Height, new Color(18, 18, 24, frontFace ? 88 : 60));
+
+        if (symbol == 'x')
+        {
+            var gateWidth = rect.Width * 0.34f;
+            var gateHeight = rect.Height * 0.56f;
+            var gate = new RectangleF(rect.Center.X - (gateWidth * 0.5f), rect.Bottom - gateHeight, gateWidth, gateHeight);
+            DrawPanel(gate.X, gate.Y, gate.Width, gate.Height, new Color(58, 46, 42));
+            for (var i = 1; i <= 3; i++)
+            {
+                var x = gate.X + (gate.Width * i / 4.0f);
+                DrawPanel(x - 1.0f, gate.Y + 2.0f, 2.0f, gate.Height - 4.0f, new Color(118, 108, 94));
+            }
+            DrawPanel(gate.X + 2.0f, gate.Y + (gate.Height * 0.28f), gate.Width - 4.0f, 2.0f, new Color(118, 108, 94));
+            DrawPanel(gate.X + 2.0f, gate.Y + (gate.Height * 0.62f), gate.Width - 4.0f, 2.0f, new Color(118, 108, 94));
+        }
+    }
+
+    private void DrawDungeonSideWall(RectangleF outerPortal, RectangleF innerPortal, char symbol, int depth, bool leftSide)
+    {
+        var baseColor = symbol == 'x' ? new Color(82, 68, 60) : new Color(74, 72, 78);
+        var midColor = symbol == 'x' ? new Color(98, 82, 70) : new Color(90, 88, 94);
+        var shadowColor = new Color(24, 24, 30, 110);
+        var lightColor = new Color(118, 112, 106, 68);
+
+        var outerX = leftSide ? outerPortal.X : outerPortal.Right;
+        var innerX = leftSide ? innerPortal.X + 12.0f : innerPortal.Right - 12.0f;
+        var topOuterX = outerX;
+        var topInnerX = innerX;
+        var bottomOuterX = outerX;
+        var bottomInnerX = innerX;
+
+        if (leftSide)
+        {
+            DrawTrapezoid(topOuterX, topInnerX, bottomOuterX, bottomInnerX, outerPortal.Y, outerPortal.Bottom, baseColor);
+            DrawTrapezoid(topOuterX + 2.0f, topInnerX - 2.0f, bottomOuterX + 2.0f, bottomInnerX - 2.0f, outerPortal.Y + 8.0f, outerPortal.Bottom - 8.0f, midColor);
+            DrawTrapezoid(topInnerX - 8.0f, topInnerX - 2.0f, bottomInnerX - 8.0f, bottomInnerX - 2.0f, innerPortal.Y, innerPortal.Bottom, shadowColor);
+            DrawTrapezoid(topOuterX, topOuterX + 6.0f, bottomOuterX, bottomOuterX + 6.0f, outerPortal.Y, outerPortal.Bottom, lightColor);
+        }
+        else
+        {
+            DrawTrapezoid(topInnerX, topOuterX, bottomInnerX, bottomOuterX, outerPortal.Y, outerPortal.Bottom, baseColor);
+            DrawTrapezoid(topInnerX + 2.0f, topOuterX - 2.0f, bottomInnerX + 2.0f, bottomOuterX - 2.0f, outerPortal.Y + 8.0f, outerPortal.Bottom - 8.0f, midColor);
+            DrawTrapezoid(topInnerX + 2.0f, topInnerX + 8.0f, bottomInnerX + 2.0f, bottomInnerX + 8.0f, innerPortal.Y, innerPortal.Bottom, shadowColor);
+            DrawTrapezoid(topOuterX - 6.0f, topOuterX, bottomOuterX - 6.0f, bottomOuterX, outerPortal.Y, outerPortal.Bottom, lightColor);
+        }
+
+        var mortarLines = 6;
+        for (var i = 1; i < mortarLines; i++)
+        {
+            var y = outerPortal.Y + ((outerPortal.Height * i) / mortarLines);
+            var t = (y - outerPortal.Y) / Math.Max(1.0f, outerPortal.Height);
+            var left = leftSide ? outerX : innerX + ((outerX - innerX) * t);
+            var right = leftSide ? innerX + ((outerX - innerX) * t) : outerX;
+            DrawPanel(Math.Min(left, right), y, Math.Abs(right - left), 1.5f, new Color(32, 32, 38, 86));
+        }
+    }
+
+    private void DrawDungeonBoundaryWalls(RectangleF viewport, RectangleF[] portals)
+    {
+        var leftDepth = 0;
+        var rightDepth = 0;
+        for (var depth = 1; depth <= portals.Length; depth++)
+        {
+            if (IsBlockedCrawlerSymbol(GetCrawlerCellSymbol(GetRelativeCell(-1, depth, isDungeonView: true), isDungeonView: true), isDungeonView: true))
+            {
+                leftDepth = depth;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        for (var depth = 1; depth <= portals.Length; depth++)
+        {
+            if (IsBlockedCrawlerSymbol(GetCrawlerCellSymbol(GetRelativeCell(1, depth, isDungeonView: true), isDungeonView: true), isDungeonView: true))
+            {
+                rightDepth = depth;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        if (leftDepth > 0)
+        {
+            var near = portals[0];
+            var far = portals[Math.Clamp(leftDepth - 1, 0, portals.Length - 1)];
+            DrawDungeonContinuousBoundaryWall(viewport, near, far, true);
+        }
+
+        if (rightDepth > 0)
+        {
+            var near = portals[0];
+            var far = portals[Math.Clamp(rightDepth - 1, 0, portals.Length - 1)];
+            DrawDungeonContinuousBoundaryWall(viewport, near, far, false);
+        }
+    }
+
+    private void DrawDungeonContinuousBoundaryWall(RectangleF viewport, RectangleF nearPortal, RectangleF farPortal, bool leftSide)
+    {
+        var baseColor = new Color(74, 72, 78);
+        var midColor = new Color(90, 88, 94);
+        var darkColor = new Color(24, 24, 30, 110);
+        var lightColor = new Color(118, 112, 106, 62);
+
+        var bottomInner = leftSide ? nearPortal.X : nearPortal.Right;
+        var topInner = leftSide ? farPortal.X : farPortal.Right;
+        var outer = leftSide ? viewport.X : viewport.Right;
+
+        if (leftSide)
+        {
+            DrawTrapezoid(outer, topInner, outer, bottomInner, viewport.Y + 38.0f, viewport.Bottom - 70.0f, baseColor);
+            DrawTrapezoid(outer + 2.0f, topInner - 10.0f, outer + 2.0f, bottomInner - 10.0f, viewport.Y + 46.0f, viewport.Bottom - 78.0f, midColor);
+            DrawTrapezoid(topInner - 12.0f, topInner - 2.0f, bottomInner - 12.0f, bottomInner - 2.0f, viewport.Y + 42.0f, viewport.Bottom - 72.0f, darkColor);
+            DrawTrapezoid(outer, outer + 6.0f, outer, outer + 6.0f, viewport.Y + 38.0f, viewport.Bottom - 70.0f, lightColor);
+        }
+        else
+        {
+            DrawTrapezoid(topInner, outer, bottomInner, outer, viewport.Y + 38.0f, viewport.Bottom - 70.0f, baseColor);
+            DrawTrapezoid(topInner + 10.0f, outer - 2.0f, bottomInner + 10.0f, outer - 2.0f, viewport.Y + 46.0f, viewport.Bottom - 78.0f, midColor);
+            DrawTrapezoid(topInner + 2.0f, topInner + 12.0f, bottomInner + 2.0f, bottomInner + 12.0f, viewport.Y + 42.0f, viewport.Bottom - 72.0f, darkColor);
+            DrawTrapezoid(outer - 6.0f, outer, outer - 6.0f, outer, viewport.Y + 38.0f, viewport.Bottom - 70.0f, lightColor);
+        }
+
+        for (var i = 1; i <= 6; i++)
+        {
+            var y = viewport.Y + 38.0f + (((viewport.Height - 108.0f) * i) / 7.0f);
+            var t = (y - (viewport.Y + 38.0f)) / Math.Max(1.0f, viewport.Height - 108.0f);
+            var inner = topInner + ((bottomInner - topInner) * t);
+            var left = leftSide ? outer : inner;
+            var right = leftSide ? inner : outer;
+            DrawPanel(Math.Min(left, right), y, Math.Abs(right - left), 1.5f, new Color(34, 34, 40, 88));
+        }
+    }
+
+    private void DrawDungeonProjectedFeature(char symbol, RectangleF dest, int depth)
+    {
+        var shadow = new RectangleF(dest.X + (dest.Width * 0.14f), dest.Bottom - 6.0f, dest.Width * 0.72f, 4.0f);
+        DrawPanel(shadow.X, shadow.Y, shadow.Width, shadow.Height, new Color(0, 0, 0, 56));
+
+        switch (symbol)
+        {
+            case '<':
+                for (var i = 0; i < 4; i++)
+                {
+                    var step = new RectangleF(dest.X + (dest.Width * (0.18f + (i * 0.08f))), dest.Bottom - (dest.Height * (0.18f + (i * 0.1f))), dest.Width * (0.64f - (i * 0.1f)), dest.Height * 0.08f);
+                    DrawPanel(step.X, step.Y, step.Width, step.Height, new Color(156, 146, 122));
+                }
+                DrawPanel(dest.Center.X - (dest.Width * 0.03f), dest.Y + (dest.Height * 0.08f), dest.Width * 0.06f, dest.Height * 0.22f, new Color(190, 180, 154));
+                break;
+            case '>':
+                for (var i = 0; i < 4; i++)
+                {
+                    var step = new RectangleF(dest.X + (dest.Width * (0.18f + (i * 0.08f))), dest.Y + (dest.Height * (0.36f + (i * 0.08f))), dest.Width * (0.64f - (i * 0.1f)), dest.Height * 0.08f);
+                    DrawPanel(step.X, step.Y, step.Width, step.Height, new Color(134, 126, 108));
+                }
+                DrawPanel(dest.Center.X - (dest.Width * 0.03f), dest.Bottom - (dest.Height * 0.28f), dest.Width * 0.06f, dest.Height * 0.18f, new Color(172, 162, 136));
+                break;
+            case 'G':
+                DrawPanel(dest.X + (dest.Width * 0.18f), dest.Bottom - (dest.Height * 0.3f), dest.Width * 0.64f, dest.Height * 0.18f, new Color(138, 96, 42));
+                DrawPanel(dest.X + (dest.Width * 0.22f), dest.Bottom - (dest.Height * 0.46f), dest.Width * 0.56f, dest.Height * 0.16f, new Color(172, 126, 58));
+                DrawFrame(new RectangleF(dest.X + (dest.Width * 0.18f), dest.Bottom - (dest.Height * 0.3f), dest.Width * 0.64f, dest.Height * 0.18f), new Color(76, 52, 24), 1);
+                DrawPanel(dest.Center.X - 2.0f, dest.Bottom - (dest.Height * 0.28f), 4.0f, dest.Height * 0.18f, new Color(224, 192, 92));
+                break;
+            case 'L':
+                DrawPanel(dest.X + (dest.Width * 0.24f), dest.Bottom - (dest.Height * 0.28f), dest.Width * 0.52f, dest.Height * 0.16f, new Color(84, 108, 118));
+                DrawPanel(dest.X + (dest.Width * 0.3f), dest.Bottom - (dest.Height * 0.5f), dest.Width * 0.4f, dest.Height * 0.22f, new Color(112, 148, 162));
+                DrawPanel(dest.X + (dest.Width * 0.36f), dest.Bottom - (dest.Height * 0.44f), dest.Width * 0.28f, dest.Height * 0.1f, new Color(196, 226, 236));
+                DrawPanel(dest.Center.X - 2.0f, dest.Y + (dest.Height * 0.16f), 4.0f, dest.Height * 0.18f, new Color(180, 206, 214, 170));
+                break;
+            case 'k':
+                DrawPanel(dest.X + (dest.Width * 0.36f), dest.Center.Y - 2.0f, dest.Width * 0.28f, 4.0f, new Color(196, 170, 92));
+                DrawPanel(dest.X + (dest.Width * 0.58f), dest.Center.Y - (dest.Height * 0.12f), 4.0f, dest.Height * 0.24f, new Color(196, 170, 92));
+                DrawPanel(dest.X + (dest.Width * 0.22f), dest.Center.Y - (dest.Height * 0.1f), dest.Width * 0.16f, dest.Height * 0.14f, new Color(196, 170, 92));
+                DrawPanel(dest.X + (dest.Width * 0.26f), dest.Center.Y - (dest.Height * 0.05f), dest.Width * 0.04f, dest.Height * 0.04f, new Color(24, 24, 28));
+                break;
+            case 'x':
+                DrawPanel(dest.X + (dest.Width * 0.22f), dest.Bottom - (dest.Height * 0.46f), dest.Width * 0.56f, dest.Height * 0.34f, new Color(64, 52, 46));
+                for (var i = 1; i <= 3; i++)
+                {
+                    var x = dest.X + (dest.Width * (0.22f + (i * 0.14f)));
+                    DrawPanel(x, dest.Bottom - (dest.Height * 0.44f), 3.0f, dest.Height * 0.3f, new Color(126, 114, 98));
+                }
+                DrawPanel(dest.X + (dest.Width * 0.24f), dest.Bottom - (dest.Height * 0.36f), dest.Width * 0.52f, 3.0f, new Color(126, 114, 98));
+                break;
+        }
+    }
+
+    private GridPoint GetRelativeCell(int side, int forward, bool isDungeonView)
+    {
+        var origin = isDungeonView ? dungeonCell : playerCell;
         var forwardVector = facing switch
         {
             Direction.Up => new GridPoint(0, -1),
@@ -1793,23 +2602,33 @@ public sealed class NotimaGame : Game
         };
 
         return new GridPoint(
-            dungeonCell.X + (forwardVector.X * forward) + (rightVector.X * side),
-            dungeonCell.Y + (forwardVector.Y * forward) + (rightVector.Y * side));
+            origin.X + (forwardVector.X * forward) + (rightVector.X * side),
+            origin.Y + (forwardVector.Y * forward) + (rightVector.Y * side));
     }
 
-    private char GetDungeonCellSymbol(GridPoint point)
+    private char GetCrawlerCellSymbol(GridPoint point, bool isDungeonView)
     {
-        if (dungeon is null || point.X < 0 || point.Y < 0 || point.X >= dungeon.Width || point.Y >= dungeon.Height)
+        if (isDungeonView)
         {
-            return '#';
+            if (dungeon is null || point.X < 0 || point.Y < 0 || point.X >= dungeon.Width || point.Y >= dungeon.Height)
+            {
+                return '#';
+            }
+
+            return dungeon.GetTile(point);
         }
 
-        return dungeon.GetTile(point);
+        if (point.X < 0 || point.Y < 0 || point.Y >= map.Rows.Count || point.X >= map.Rows[point.Y].Length)
+        {
+            return '^';
+        }
+
+        return map.Rows[point.Y][point.X];
     }
 
-    private bool IsBlockedDungeonSymbol(char symbol) => !GetTileDefinition(symbol).Walkable;
+    private bool IsBlockedCrawlerSymbol(char symbol, bool isDungeonView) => !GetTileDefinition(symbol).Walkable;
 
-    private string GetDungeonFeatureLabel(char symbol) => symbol switch
+    private string GetCrawlerFeatureLabel(char symbol, bool isDungeonView) => symbol switch
     {
         '<' => "UP",
         '>' => "DOWN",
@@ -1817,8 +2636,145 @@ public sealed class NotimaGame : Game
         'L' => "FOUNTAIN",
         'k' => "KEY",
         'x' => "GATE",
+        '*' when !isDungeonView => "TREES",
+        '=' or 'P' when !isDungeonView => string.Empty,
+        'F' when !isDungeonView => "FEN",
+        'T' when !isDungeonView => "TOWN",
+        'K' when !isDungeonView => "KEEP",
+        'R' when !isDungeonView => "RUINS",
+        'S' when !isDungeonView => "SHRINE",
+        'H' when !isDungeonView => "HARBOR",
+        'C' when !isDungeonView => "CAMP",
+        'D' when !isDungeonView => "DUNGEON",
         _ => "ALTAR",
     };
+
+    private Color GetCrawlerFeatureColor(char symbol, bool isDungeonView) => symbol switch
+    {
+        '<' => new Color(214, 198, 154),
+        '>' => new Color(184, 168, 136),
+        'G' => new Color(194, 152, 88),
+        'L' => new Color(112, 150, 170),
+        'k' => new Color(186, 160, 92),
+        'x' => new Color(110, 94, 82),
+        '*' when !isDungeonView => new Color(118, 166, 110),
+        'F' when !isDungeonView => new Color(134, 160, 118),
+        'T' or 'H' when !isDungeonView => new Color(210, 190, 144),
+        'K' when !isDungeonView => new Color(188, 194, 208),
+        'R' when !isDungeonView => new Color(174, 142, 138),
+        'S' when !isDungeonView => new Color(170, 150, 194),
+        'C' when !isDungeonView => new Color(188, 142, 112),
+        'D' when !isDungeonView => new Color(176, 124, 118),
+        _ => new Color(160, 122, 96),
+    };
+
+    private Color GetCrawlerWallTint(char symbol, bool isDungeonView) => symbol switch
+    {
+        '~' when !isDungeonView => new Color(78, 100, 126),
+        '^' when !isDungeonView => new Color(86, 88, 94),
+        _ when !isDungeonView => new Color(122, 114, 98),
+        'x' => new Color(92, 80, 72),
+        _ => new Color(86, 84, 90),
+    };
+
+    private Color GetOverworldInsetColor(char symbol) => symbol switch
+    {
+        '~' => new Color(54, 80, 110),
+        '^' => new Color(74, 78, 84),
+        '*' => new Color(62, 92, 62),
+        'F' => new Color(78, 96, 74),
+        '=' or 'P' => new Color(116, 92, 68),
+        'T' or 'H' => new Color(140, 128, 92),
+        'K' => new Color(122, 126, 140),
+        'R' => new Color(120, 90, 84),
+        'S' => new Color(118, 102, 138),
+        'C' => new Color(126, 88, 70),
+        'D' => new Color(132, 76, 72),
+        _ => new Color(72, 88, 60),
+    };
+
+    private Color GetDungeonMinimapColor(char symbol) => symbol switch
+    {
+        '#' => new Color(58, 60, 66),
+        '<' or '>' => new Color(120, 114, 96),
+        'G' => new Color(126, 102, 62),
+        'L' => new Color(76, 102, 118),
+        'k' => new Color(144, 124, 70),
+        'x' => new Color(82, 70, 64),
+        'M' => new Color(120, 66, 66),
+        'B' => new Color(156, 72, 72),
+        _ => new Color(74, 80, 88),
+    };
+
+    private Color GetMinimapCellColor(char symbol, bool isDungeonView) => isDungeonView
+        ? GetDungeonMinimapColor(symbol)
+        : GetOverworldInsetColor(symbol);
+
+    private static bool ShouldDrawMinimapIsoIcon(char symbol, bool isDungeonView) => isDungeonView
+        ? symbol is not '.' and not '#'
+        : symbol is not '.' and not '~' and not '^';
+
+    private void TurnLeft()
+    {
+        facing = facing switch
+        {
+            Direction.Up => Direction.Left,
+            Direction.Left => Direction.Down,
+            Direction.Down => Direction.Right,
+            _ => Direction.Up,
+        };
+    }
+
+    private void TurnRight()
+    {
+        facing = facing switch
+        {
+            Direction.Up => Direction.Right,
+            Direction.Right => Direction.Down,
+            Direction.Down => Direction.Left,
+            _ => Direction.Up,
+        };
+    }
+
+    private GridPoint GetForwardDelta() => facing switch
+    {
+        Direction.Up => new GridPoint(0, -1),
+        Direction.Down => new GridPoint(0, 1),
+        Direction.Left => new GridPoint(-1, 0),
+        _ => new GridPoint(1, 0),
+    };
+
+    private GridPoint GetRightDelta() => facing switch
+    {
+        Direction.Up => new GridPoint(1, 0),
+        Direction.Down => new GridPoint(-1, 0),
+        Direction.Left => new GridPoint(0, -1),
+        _ => new GridPoint(0, 1),
+    };
+
+    private GridPoint GetBackwardDelta()
+    {
+        var forward = GetForwardDelta();
+        return new GridPoint(-forward.X, -forward.Y);
+    }
+
+    private static string GetFacingLabelForDelta(GridPoint delta) => delta switch
+    {
+        { X: -1, Y: 0 } => "west",
+        { X: 1, Y: 0 } => "east",
+        { X: 0, Y: -1 } => "north",
+        _ => "south",
+    };
+
+    private void DrawCloud(RectangleF rect)
+    {
+        var white = new Color(244, 248, 255, 210);
+        DrawPanel(rect.X + (rect.Width * 0.12f), rect.Y + (rect.Height * 0.34f), rect.Width * 0.72f, rect.Height * 0.34f, white);
+        DrawPanel(rect.X, rect.Y + (rect.Height * 0.4f), rect.Width * 0.28f, rect.Height * 0.22f, white);
+        DrawPanel(rect.X + (rect.Width * 0.2f), rect.Y + (rect.Height * 0.12f), rect.Width * 0.28f, rect.Height * 0.32f, white);
+        DrawPanel(rect.X + (rect.Width * 0.46f), rect.Y, rect.Width * 0.26f, rect.Height * 0.34f, white);
+        DrawPanel(rect.X + (rect.Width * 0.68f), rect.Y + (rect.Height * 0.18f), rect.Width * 0.22f, rect.Height * 0.26f, white);
+    }
 
     private void DrawDungeonStoneFill(char symbol, RectangleF tileDestination)
     {
@@ -1969,6 +2925,196 @@ public sealed class NotimaGame : Game
         }
     }
 
+    private void DrawTreeSilhouette(RectangleF rect, int variantSeed)
+    {
+        var seed = variantSeed != 0
+            ? variantSeed
+            : ((int)(rect.X * 0.19f) ^ ((int)(rect.Y * 0.13f) << 1) ^ ((int)(rect.Width * 0.09f) << 2));
+        var clusterCount = 3 + (TreeNoise(seed, 1) > 0.52f ? 1 : 0);
+        for (var i = 0; i < clusterCount; i++)
+        {
+            var position = clusterCount == 1 ? 0.5f : 0.14f + (i * (0.72f / Math.Max(1, clusterCount - 1)));
+            position += (TreeNoise(seed, 2 + i) - 0.5f) * 0.12f;
+            var width = rect.Width * (0.24f + (TreeNoise(seed, 6 + i) * 0.18f));
+            var height = rect.Height * (0.56f + (TreeNoise(seed, 10 + i) * 0.3f));
+            var crownBottom = rect.Bottom - (rect.Height * (0.08f + (TreeNoise(seed, 14 + i) * 0.12f)));
+            var crownRect = new RectangleF(
+                rect.X + (rect.Width * position) - (width * 0.5f),
+                crownBottom - height,
+                width,
+                height);
+
+            var trunkWidth = Math.Max(3.0f, crownRect.Width * 0.14f);
+            var trunkTop = crownRect.Y + (crownRect.Height * (0.42f + (TreeNoise(seed, 18 + i) * 0.12f)));
+            var trunk = new RectangleF(crownRect.Center.X - (trunkWidth * 0.5f), trunkTop, trunkWidth, Math.Max(4.0f, rect.Bottom - trunkTop));
+
+            DrawPanel(trunk.X, trunk.Y, trunk.Width, trunk.Height, new Color(72, 56, 36));
+
+            var topCrown = new RectangleF(
+                crownRect.X + (crownRect.Width * 0.14f),
+                crownRect.Y + (crownRect.Height * 0.02f),
+                crownRect.Width * 0.72f,
+                crownRect.Height * 0.24f);
+            var midCrown = new RectangleF(
+                crownRect.X + (crownRect.Width * 0.02f),
+                crownRect.Y + (crownRect.Height * 0.24f),
+                crownRect.Width * 0.96f,
+                crownRect.Height * 0.28f);
+            var lowCrown = new RectangleF(
+                crownRect.X + (crownRect.Width * 0.12f),
+                crownRect.Y + (crownRect.Height * 0.5f),
+                crownRect.Width * 0.76f,
+                crownRect.Height * 0.2f);
+
+            DrawPanel(topCrown.X, topCrown.Y, topCrown.Width, topCrown.Height, new Color(44, 102, 48));
+            DrawPanel(midCrown.X, midCrown.Y, midCrown.Width, midCrown.Height, new Color(34, 84, 38));
+            DrawPanel(lowCrown.X, lowCrown.Y, lowCrown.Width, lowCrown.Height, new Color(24, 62, 28));
+            DrawPanel(crownRect.X + (crownRect.Width * 0.26f), crownRect.Bottom - (crownRect.Height * 0.06f), crownRect.Width * 0.48f, crownRect.Height * 0.03f, new Color(18, 28, 18, 84));
+        }
+    }
+
+    private void DrawMountainSilhouette(RectangleF rect)
+    {
+        var seed = (int)(rect.X * 0.17f) ^ ((int)(rect.Y * 0.11f) << 1) ^ ((int)(rect.Width * 0.07f) << 2);
+        var leftWidth = 0.22f + (MountainNoise(seed, 1) * 0.12f);
+        var centerWidth = 0.24f + (MountainNoise(seed, 2) * 0.18f);
+        var rightWidth = 0.18f + (MountainNoise(seed, 3) * 0.12f);
+        var leftHeight = 0.42f + (MountainNoise(seed, 4) * 0.24f);
+        var centerHeight = 0.58f + (MountainNoise(seed, 5) * 0.22f);
+        var rightHeight = 0.36f + (MountainNoise(seed, 6) * 0.28f);
+        var leftX = 0.04f + (MountainNoise(seed, 7) * 0.12f);
+        var centerX = 0.26f + (MountainNoise(seed, 8) * 0.12f);
+        var rightX = 0.54f + (MountainNoise(seed, 9) * 0.16f);
+        var leftTop = 0.28f + (MountainNoise(seed, 10) * 0.18f);
+        var centerTop = 0.1f + (MountainNoise(seed, 11) * 0.14f);
+        var rightTop = 0.22f + (MountainNoise(seed, 12) * 0.2f);
+
+        DrawPanel(rect.X + (rect.Width * leftX), rect.Y + (rect.Height * leftTop), rect.Width * leftWidth, rect.Height * leftHeight, new Color(78, 80, 86));
+        DrawPanel(rect.X + (rect.Width * centerX), rect.Y + (rect.Height * centerTop), rect.Width * centerWidth, rect.Height * centerHeight, new Color(92, 94, 100));
+        DrawPanel(rect.X + (rect.Width * rightX), rect.Y + (rect.Height * rightTop), rect.Width * rightWidth, rect.Height * rightHeight, new Color(70, 72, 78));
+
+        if (MountainNoise(seed, 13) > 0.38f)
+        {
+            var capWidth = rect.Width * (0.1f + (MountainNoise(seed, 14) * 0.08f));
+            var capX = rect.X + (rect.Width * (centerX + 0.04f));
+            var capY = rect.Y + (rect.Height * (centerTop + 0.02f));
+            DrawPanel(capX, capY, capWidth, rect.Height * 0.08f, new Color(170, 172, 178));
+        }
+
+        if (MountainNoise(seed, 15) > 0.54f)
+        {
+            DrawPanel(rect.X + (rect.Width * (leftX + 0.04f)), rect.Y + (rect.Height * (leftTop + 0.12f)), rect.Width * 0.08f, rect.Height * 0.06f, new Color(132, 134, 140));
+        }
+    }
+
+    private static float MountainNoise(int seed, int salt)
+    {
+        unchecked
+        {
+            var value = seed ^ (salt * 374761393);
+            value = (value ^ (value >> 13)) * 1274126177;
+            value ^= value >> 16;
+            return (value & 1023) / 1023.0f;
+        }
+    }
+
+    private static float TreeNoise(int seed, int salt)
+    {
+        unchecked
+        {
+            var value = seed ^ (salt * 668265263);
+            value = (value ^ (value >> 15)) * unchecked((int)2246822519u);
+            value ^= value >> 13;
+            return (value & 1023) / 1023.0f;
+        }
+    }
+
+    private void DrawFenSilhouette(RectangleF rect)
+    {
+        DrawPanel(rect.X + (rect.Width * 0.12f), rect.Bottom - (rect.Height * 0.28f), rect.Width * 0.76f, rect.Height * 0.18f, new Color(64, 94, 98));
+        DrawPanel(rect.X + (rect.Width * 0.2f), rect.Bottom - (rect.Height * 0.42f), rect.Width * 0.12f, rect.Height * 0.3f, new Color(88, 110, 72));
+        DrawPanel(rect.X + (rect.Width * 0.44f), rect.Bottom - (rect.Height * 0.48f), rect.Width * 0.12f, rect.Height * 0.36f, new Color(82, 102, 68));
+        DrawPanel(rect.X + (rect.Width * 0.66f), rect.Bottom - (rect.Height * 0.4f), rect.Width * 0.1f, rect.Height * 0.28f, new Color(90, 112, 74));
+    }
+
+    private void DrawTownGateSilhouette(RectangleF rect)
+    {
+        var wallColor = new Color(132, 118, 92);
+        var roofColor = new Color(146, 82, 64);
+        var towerColor = new Color(122, 110, 88);
+        var shadowColor = new Color(72, 52, 38);
+        var trimColor = new Color(174, 156, 120);
+
+        DrawPanel(rect.X + (rect.Width * 0.08f), rect.Bottom - (rect.Height * 0.16f), rect.Width * 0.84f, rect.Height * 0.08f, shadowColor);
+
+        DrawPanel(rect.X + (rect.Width * 0.12f), rect.Y + (rect.Height * 0.26f), rect.Width * 0.16f, rect.Height * 0.46f, towerColor);
+        DrawPanel(rect.X + (rect.Width * 0.72f), rect.Y + (rect.Height * 0.24f), rect.Width * 0.16f, rect.Height * 0.48f, towerColor);
+        DrawPanel(rect.X + (rect.Width * 0.18f), rect.Y + (rect.Height * 0.18f), rect.Width * 0.1f, rect.Height * 0.08f, trimColor);
+        DrawPanel(rect.X + (rect.Width * 0.72f), rect.Y + (rect.Height * 0.16f), rect.Width * 0.1f, rect.Height * 0.08f, trimColor);
+
+        DrawPanel(rect.X + (rect.Width * 0.28f), rect.Y + (rect.Height * 0.34f), rect.Width * 0.18f, rect.Height * 0.28f, wallColor);
+        DrawPanel(rect.X + (rect.Width * 0.48f), rect.Y + (rect.Height * 0.3f), rect.Width * 0.2f, rect.Height * 0.34f, wallColor);
+        DrawPanel(rect.X + (rect.Width * 0.32f), rect.Y + (rect.Height * 0.26f), rect.Width * 0.12f, rect.Height * 0.08f, roofColor);
+        DrawPanel(rect.X + (rect.Width * 0.5f), rect.Y + (rect.Height * 0.2f), rect.Width * 0.14f, rect.Height * 0.1f, roofColor);
+
+        DrawPanel(rect.X + (rect.Width * 0.24f), rect.Y + (rect.Height * 0.46f), rect.Width * 0.52f, rect.Height * 0.22f, wallColor);
+        DrawPanel(rect.X + (rect.Width * 0.28f), rect.Y + (rect.Height * 0.4f), rect.Width * 0.44f, rect.Height * 0.06f, trimColor);
+        DrawPanel(rect.X + (rect.Width * 0.42f), rect.Bottom - (rect.Height * 0.3f), rect.Width * 0.16f, rect.Height * 0.22f, shadowColor);
+
+        DrawPanel(rect.X + (rect.Width * 0.18f), rect.Y + (rect.Height * 0.52f), rect.Width * 0.04f, rect.Height * 0.06f, shadowColor);
+        DrawPanel(rect.X + (rect.Width * 0.24f), rect.Y + (rect.Height * 0.5f), rect.Width * 0.04f, rect.Height * 0.08f, shadowColor);
+        DrawPanel(rect.X + (rect.Width * 0.68f), rect.Y + (rect.Height * 0.5f), rect.Width * 0.04f, rect.Height * 0.08f, shadowColor);
+        DrawPanel(rect.X + (rect.Width * 0.74f), rect.Y + (rect.Height * 0.52f), rect.Width * 0.04f, rect.Height * 0.06f, shadowColor);
+    }
+
+    private void DrawHarborSilhouette(RectangleF rect)
+    {
+        DrawPanel(rect.X + (rect.Width * 0.16f), rect.Bottom - (rect.Height * 0.18f), rect.Width * 0.68f, rect.Height * 0.08f, new Color(94, 76, 58));
+        DrawPanel(rect.X + (rect.Width * 0.24f), rect.Y + (rect.Height * 0.2f), rect.Width * 0.16f, rect.Height * 0.52f, new Color(116, 98, 76));
+        DrawPanel(rect.X + (rect.Width * 0.44f), rect.Y + (rect.Height * 0.28f), rect.Width * 0.24f, rect.Height * 0.44f, new Color(132, 118, 90));
+        DrawPanel(rect.X + (rect.Width * 0.7f), rect.Y + (rect.Height * 0.16f), rect.Width * 0.04f, rect.Height * 0.46f, new Color(126, 114, 88));
+        DrawPanel(rect.X + (rect.Width * 0.74f), rect.Y + (rect.Height * 0.16f), rect.Width * 0.18f, rect.Height * 0.04f, new Color(186, 188, 178));
+    }
+
+    private void DrawKeepSilhouette(RectangleF rect)
+    {
+        DrawPanel(rect.X + (rect.Width * 0.18f), rect.Y + (rect.Height * 0.18f), rect.Width * 0.18f, rect.Height * 0.58f, new Color(118, 122, 132));
+        DrawPanel(rect.X + (rect.Width * 0.64f), rect.Y + (rect.Height * 0.18f), rect.Width * 0.18f, rect.Height * 0.58f, new Color(118, 122, 132));
+        DrawPanel(rect.X + (rect.Width * 0.34f), rect.Y + (rect.Height * 0.28f), rect.Width * 0.32f, rect.Height * 0.48f, new Color(132, 136, 146));
+        DrawPanel(rect.X + (rect.Width * 0.3f), rect.Y + (rect.Height * 0.14f), rect.Width * 0.4f, rect.Height * 0.08f, new Color(152, 156, 164));
+    }
+
+    private void DrawRuinSilhouette(RectangleF rect)
+    {
+        DrawPanel(rect.X + (rect.Width * 0.2f), rect.Y + (rect.Height * 0.34f), rect.Width * 0.16f, rect.Height * 0.42f, new Color(108, 92, 82));
+        DrawPanel(rect.X + (rect.Width * 0.46f), rect.Y + (rect.Height * 0.24f), rect.Width * 0.18f, rect.Height * 0.52f, new Color(122, 102, 90));
+        DrawPanel(rect.X + (rect.Width * 0.68f), rect.Y + (rect.Height * 0.42f), rect.Width * 0.12f, rect.Height * 0.34f, new Color(98, 84, 74));
+        DrawPanel(rect.X + (rect.Width * 0.18f), rect.Bottom - (rect.Height * 0.12f), rect.Width * 0.64f, rect.Height * 0.06f, new Color(72, 64, 58));
+    }
+
+    private void DrawShrineSilhouette(RectangleF rect)
+    {
+        DrawPanel(rect.X + (rect.Width * 0.26f), rect.Y + (rect.Height * 0.28f), rect.Width * 0.48f, rect.Height * 0.44f, new Color(126, 114, 136));
+        DrawPanel(rect.X + (rect.Width * 0.22f), rect.Y + (rect.Height * 0.2f), rect.Width * 0.56f, rect.Height * 0.08f, new Color(162, 146, 178));
+        DrawPanel(rect.Center.X - (rect.Width * 0.03f), rect.Y + (rect.Height * 0.04f), rect.Width * 0.06f, rect.Height * 0.22f, new Color(190, 174, 212));
+        DrawPanel(rect.Center.X - (rect.Width * 0.12f), rect.Y + (rect.Height * 0.12f), rect.Width * 0.24f, rect.Height * 0.04f, new Color(196, 182, 220));
+    }
+
+    private void DrawCampSilhouette(RectangleF rect)
+    {
+        DrawPanel(rect.X + (rect.Width * 0.18f), rect.Bottom - (rect.Height * 0.16f), rect.Width * 0.64f, rect.Height * 0.04f, new Color(96, 82, 58));
+        DrawPanel(rect.X + (rect.Width * 0.26f), rect.Y + (rect.Height * 0.38f), rect.Width * 0.28f, rect.Height * 0.28f, new Color(104, 92, 72));
+        DrawPanel(rect.X + (rect.Width * 0.5f), rect.Y + (rect.Height * 0.36f), rect.Width * 0.24f, rect.Height * 0.24f, new Color(92, 82, 68));
+        DrawPanel(rect.Center.X - (rect.Width * 0.04f), rect.Bottom - (rect.Height * 0.28f), rect.Width * 0.08f, rect.Height * 0.08f, new Color(212, 126, 62));
+    }
+
+    private void DrawDungeonMouthSilhouette(RectangleF rect)
+    {
+        DrawPanel(rect.X + (rect.Width * 0.14f), rect.Y + (rect.Height * 0.18f), rect.Width * 0.72f, rect.Height * 0.56f, new Color(96, 84, 78));
+        DrawPanel(rect.X + (rect.Width * 0.3f), rect.Y + (rect.Height * 0.34f), rect.Width * 0.4f, rect.Height * 0.4f, new Color(18, 20, 24));
+        DrawPanel(rect.X + (rect.Width * 0.2f), rect.Y + (rect.Height * 0.12f), rect.Width * 0.6f, rect.Height * 0.08f, new Color(114, 100, 92));
+    }
+
     private static Rectangle GetPlayerSourceFrameFor(Direction direction, int frame, int roleIndex)
     {
         var row = direction switch
@@ -2028,7 +3174,75 @@ public sealed class NotimaGame : Game
 
         DrawText("MOVE WASD OR ARROWS", new Vector2(HudX + 22, 622), new Color(126, 145, 172), 2);
         DrawText("ENTER INTERACTS", new Vector2(HudX + 22, 648), new Color(126, 145, 172), 2);
-        DrawText("F5 SAVE  F9 LOAD", new Vector2(HudX + 22, 674), new Color(126, 145, 172), 2);
+        DrawText("F5 SAVE  F9 LOAD  F10 DUNGEON", new Vector2(HudX + 22, 674), new Color(126, 145, 172), 2);
+    }
+
+    private void DrawMinimapOverlay()
+    {
+        var panel = new RectangleF(468, 38, 228, 178);
+        DrawPanel(panel.X, panel.Y, panel.Width, panel.Height, new Color(16, 20, 28, 222));
+        DrawFrame(panel, new Color(114, 126, 152), 2);
+        DrawText(dungeon is null ? "MINIMAP" : "DUNGEON MAP", new Vector2(panel.X + 10, panel.Y + 8), new Color(198, 182, 140), 1);
+
+        var mapArea = new RectangleF(panel.X + 10, panel.Y + 26, panel.Width - 20, dungeon is null && ShowProjectionDebug ? panel.Height - 58 : panel.Height - 36);
+        DrawPanel(mapArea.X, mapArea.Y, mapArea.Width, mapArea.Height, new Color(10, 14, 18, 216));
+        DrawFrame(mapArea, new Color(72, 82, 102), 1);
+
+        const float cell = 7.0f;
+        var rows = dungeon is null ? map.Rows : dungeon.Rows;
+        var currentCell = dungeon is null ? playerCell : dungeonCell;
+        var originX = mapArea.Center.X - ((currentCell.X + 0.5f) * cell);
+        var originY = mapArea.Center.Y - ((currentCell.Y + 0.5f) * cell);
+
+        for (var y = 0; y < rows.Count; y++)
+        {
+            var row = rows[y];
+            for (var x = 0; x < row.Length; x++)
+            {
+                var tileRect = new RectangleF(originX + (x * cell), originY + (y * cell), cell, cell);
+                if (tileRect.Right < mapArea.X || tileRect.Bottom < mapArea.Y || tileRect.X > mapArea.Right || tileRect.Y > mapArea.Bottom)
+                {
+                    continue;
+                }
+
+                var symbol = row[x];
+                DrawPanel(tileRect.X, tileRect.Y, tileRect.Width, tileRect.Height, GetMinimapCellColor(symbol, dungeon is not null));
+
+                if (ShouldDrawMinimapIsoIcon(symbol, dungeon is not null))
+                {
+                    var icon = new RectangleF(tileRect.X + 1.0f, tileRect.Y + 1.0f, tileRect.Width - 2.0f, tileRect.Height - 2.0f);
+                    spriteBatch.Draw(tileTexture, UiRect(icon), GetIsoTileSource(symbol), Color.White, 0, Vector2.Zero);
+                }
+            }
+        }
+
+        var playerMarker = new RectangleF(mapArea.Center.X - 4.0f, mapArea.Center.Y - 4.0f, 8.0f, 8.0f);
+        DrawPanel(playerMarker.X, playerMarker.Y, playerMarker.Width, playerMarker.Height, new Color(226, 92, 72));
+        DrawFrame(playerMarker, new Color(255, 220, 180), 1);
+
+        var facingTip = facing switch
+        {
+            Direction.Up => new RectangleF(playerMarker.Center.X - 1.0f, playerMarker.Y - 5.0f, 2.0f, 4.0f),
+            Direction.Down => new RectangleF(playerMarker.Center.X - 1.0f, playerMarker.Bottom + 1.0f, 2.0f, 4.0f),
+            Direction.Left => new RectangleF(playerMarker.X - 5.0f, playerMarker.Center.Y - 1.0f, 4.0f, 2.0f),
+            _ => new RectangleF(playerMarker.Right + 1.0f, playerMarker.Center.Y - 1.0f, 4.0f, 2.0f),
+        };
+        DrawPanel(facingTip.X, facingTip.Y, facingTip.Width, facingTip.Height, new Color(255, 220, 180));
+
+        if (dungeon is null && ShowProjectionDebug)
+        {
+            var debugOrigin = new Vector2(panel.X + 10, panel.Bottom - 24);
+            DrawText(GetProjectionDebugLine(1), debugOrigin, new Color(168, 188, 206), 1);
+            DrawText(GetProjectionDebugLine(3), new Vector2(debugOrigin.X, debugOrigin.Y + 10), new Color(146, 166, 186), 1);
+        }
+    }
+
+    private string GetProjectionDebugLine(int depth)
+    {
+        var left = GetCrawlerCellSymbol(GetRelativeCell(-1, depth, isDungeonView: false), false);
+        var center = GetCrawlerCellSymbol(GetRelativeCell(0, depth, isDungeonView: false), false);
+        var right = GetCrawlerCellSymbol(GetRelativeCell(1, depth, isDungeonView: false), false);
+        return $"D{depth} {left}{center}{right}";
     }
 
     private void DrawPanels()
