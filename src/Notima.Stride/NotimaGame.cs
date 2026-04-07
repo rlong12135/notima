@@ -739,7 +739,7 @@ public sealed class NotimaGame : Game
             DrawEncounterAnimation();
         }
 
-        var lineY = uiMode == UiMode.Encounter ? PanelY + 152 : PanelY + 72;
+        var lineY = uiMode == UiMode.Encounter ? PanelY + 214 : PanelY + 72;
         foreach (var line in panelLines)
         {
             DrawWrappedText(line, new Vector2(PanelX + 22, lineY), 2, PanelWidth - 44, new Color(232, 238, 252));
@@ -770,10 +770,20 @@ public sealed class NotimaGame : Game
 
     private void DrawEncounterAnimation()
     {
-        DrawPanel(PanelX + 18, PanelY + 56, PanelWidth - 36, 84, new Color(34, 39, 57, 210));
-        DrawFrame(new RectangleF(PanelX + 18, PanelY + 56, PanelWidth - 36, 84), new Color(106, 128, 177), 1);
+        var boardRect = new RectangleF(PanelX + 18, PanelY + 56, PanelWidth - 36, 144);
+        DrawPanel(boardRect.X, boardRect.Y, boardRect.Width, boardRect.Height, new Color(28, 36, 50, 220));
+        DrawFrame(boardRect, new Color(106, 128, 177), 1);
 
-        var partyBase = new Vector2(PanelX + 34, PanelY + 80);
+        var boardOrigin = new Vector2(boardRect.X + (boardRect.Width * 0.5f) - 34.0f, boardRect.Y + 22.0f);
+        for (var boardY = 0; boardY < 3; boardY++)
+        {
+            for (var boardX = 0; boardX < 4; boardX++)
+            {
+                var tile = GetEncounterTileDestination(boardOrigin, boardX, boardY);
+                spriteBatch.Draw(tileTexture, tile, GetIsoTileSource('.'), Color.White, 0, Vector2.Zero);
+            }
+        }
+
         var partyColors = new[]
         {
             Color.White,
@@ -786,12 +796,42 @@ public sealed class NotimaGame : Game
         {
             var frame = GetPlayerSourceFrameFor(i == 0 ? facing : Direction.Right, ((int)(totalTime * 7.0f) + i) % 3);
             var sourceRect = new RectangleF(frame.X, frame.Y, frame.Width, frame.Height);
-            var bounce = MathF.Sin((totalTime * 7.0f) + (i * 0.7f)) * 1.8f;
-            var destination = new RectangleF(partyBase.X + (i * 30.0f), partyBase.Y + bounce, 26.0f, 26.0f);
+            var bounce = MathF.Sin((totalTime * 7.0f) + (i * 0.7f)) * 2.4f;
+            var tile = GetEncounterTileDestination(boardOrigin, i % 2, i / 2);
+            var destination = new RectangleF(tile.X + 12.0f, tile.Y - 4.0f + bounce, 34.0f, 34.0f);
+            spriteBatch.Draw(whiteTexture, new RectangleF(destination.X + 8.0f, destination.Y + destination.Height - 5.0f, destination.Width - 16.0f, 3.0f), new Color(0, 0, 0, 64));
             spriteBatch.Draw(playerTexture, destination, sourceRect, partyColors[i], 0, Vector2.Zero);
         }
 
-        DrawEnemySprite(new Vector2(PanelX + 260, PanelY + 74), 4);
+        DrawEnemyBoardPresence(boardOrigin);
+    }
+
+    private void DrawEnemyBoardPresence(Vector2 boardOrigin)
+    {
+        if (encounter is null)
+        {
+            return;
+        }
+
+        var enemyTile = GetEncounterTileDestination(boardOrigin, 3, 1);
+        spriteBatch.Draw(tileTexture, enemyTile, GetIsoTileSource(encounter.Name == "FEN LEECHES" ? 'F' : '*'), Color.White, 0, Vector2.Zero);
+        DrawEnemySprite(new Vector2(enemyTile.X + 6.0f, enemyTile.Y - 10.0f), 4);
+
+        if (encounter.Name == "WOLF PACK")
+        {
+            DrawEnemySprite(new Vector2(GetEncounterTileDestination(boardOrigin, 3, 0).X + 10.0f, GetEncounterTileDestination(boardOrigin, 3, 0).Y - 6.0f), 3);
+        }
+        else if (encounter.Name == "ROAD BANDITS")
+        {
+            DrawEnemySprite(new Vector2(GetEncounterTileDestination(boardOrigin, 2, 2).X + 12.0f, GetEncounterTileDestination(boardOrigin, 2, 2).Y - 4.0f), 3);
+        }
+    }
+
+    private static RectangleF GetEncounterTileDestination(Vector2 origin, int x, int y)
+    {
+        var screenX = origin.X + ((x - y) * (IsoHalfWidth * 0.68f));
+        var screenY = origin.Y + ((x + y) * (IsoHalfHeight * 0.68f));
+        return new RectangleF(screenX, screenY, IsoTileWidth * 0.68f, IsoTileHeight * 0.68f);
     }
 
     private void DrawEnemySprite(Vector2 origin, int scale)
