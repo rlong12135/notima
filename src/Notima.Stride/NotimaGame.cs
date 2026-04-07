@@ -99,9 +99,6 @@ public sealed class NotimaGame : Game
     private SpellKind selectedSpell = SpellKind.Ember;
     private List<CombatTurnEntry> encounterTurnOrder = [];
     private int encounterTurnCursor;
-    private GridPoint pendingMoveDelta = GridPoint.Zero;
-    private GridPoint pendingMoveTarget = GridPoint.Zero;
-    private bool hasPendingMove;
     private float uiScale = 1.0f;
     private float layoutOffsetX;
     private float layoutOffsetY;
@@ -513,45 +510,8 @@ public sealed class NotimaGame : Game
         statusLine = "The overworld settles back into place.";
     }
 
-    private void HandleQueuedMove(GridPoint delta, bool isDungeonMove)
-    {
-        var origin = isDungeonMove ? dungeonCell : playerCell;
-        var target = new GridPoint(origin.X + delta.X, origin.Y + delta.Y);
-
-        if (hasPendingMove && pendingMoveDelta == delta)
-        {
-            ClearPendingMove();
-            moveCooldown = MoveRepeatDelay;
-            if (isDungeonMove)
-            {
-                TryMoveDungeon(delta);
-            }
-            else
-            {
-                TryMove(delta);
-            }
-
-            return;
-        }
-
-        hasPendingMove = true;
-        pendingMoveDelta = delta;
-        pendingMoveTarget = target;
-        if (isDungeonMove)
-        {
-            statusLine = $"Confirm move to [{target.X},{target.Y}]";
-        }
-        else
-        {
-            statusLine = $"Confirm {GetFacingLabelForDelta(delta)}.";
-        }
-    }
-
     private void ClearPendingMove()
     {
-        hasPendingMove = false;
-        pendingMoveDelta = GridPoint.Zero;
-        pendingMoveTarget = GridPoint.Zero;
     }
 
     private void TryMoveDungeon(GridPoint delta)
@@ -1581,7 +1541,6 @@ public sealed class NotimaGame : Game
         DrawPanel(viewport.X, viewport.Y, viewport.Width, viewport.Height, new Color(10, 12, 18, 255));
         DrawFrame(viewport, new Color(80, 88, 106), 2);
         DrawOverworldEnvironment(viewport);
-        DrawOverworldInset(view);
         DrawDungeonPortraitStrip(view);
     }
 
@@ -1599,7 +1558,6 @@ public sealed class NotimaGame : Game
         DrawPanel(viewport.X, viewport.Y, viewport.Width, viewport.Height, new Color(10, 12, 18, 255));
         DrawFrame(viewport, new Color(80, 88, 106), 2);
         DrawCrawlerEnvironment(viewport, isDungeonView: true);
-        DrawDungeonInset(view);
         DrawDungeonPortraitStrip(view);
     }
 
@@ -1836,12 +1794,6 @@ public sealed class NotimaGame : Game
         if (isDungeonView)
         {
             DrawDungeonRaycastEnvironment(viewport);
-
-            if (hasPendingMove)
-            {
-                DrawCrawlerQueuedMoveIndicator(viewport, isDungeonView);
-            }
-
             return;
         }
 
@@ -1898,10 +1850,6 @@ public sealed class NotimaGame : Game
             DrawCrawlerFeatureBillboard(forwardSymbol, portal, depth, isDungeonView);
         }
 
-        if (hasPendingMove)
-        {
-            DrawCrawlerQueuedMoveIndicator(viewport, isDungeonView);
-        }
     }
 
     private void DrawDungeonRaycastEnvironment(RectangleF viewport)
@@ -2197,117 +2145,33 @@ public sealed class NotimaGame : Game
         }
     }
 
-    private void DrawCrawlerQueuedMoveIndicator(RectangleF viewport, bool isDungeonView)
-    {
-        var currentCell = isDungeonView ? dungeonCell : playerCell;
-        var dx = pendingMoveTarget.X - currentCell.X;
-        var dy = pendingMoveTarget.Y - currentCell.Y;
-        var indicator = new RectangleF(viewport.Center.X - 46.0f, viewport.Bottom - 82.0f, 92.0f, 46.0f);
-        if (dx == 0 && dy == 0)
-        {
-            return;
-        }
-
-        if (dx < 0)
-        {
-            indicator = new RectangleF(viewport.X + 26.0f, viewport.Center.Y - 22.0f, 92.0f, 46.0f);
-        }
-        else if (dx > 0)
-        {
-            indicator = new RectangleF(viewport.Right - 118.0f, viewport.Center.Y - 22.0f, 92.0f, 46.0f);
-        }
-        else if (dy < 0)
-        {
-            indicator = new RectangleF(viewport.Center.X - 46.0f, viewport.Y + 54.0f, 92.0f, 46.0f);
-        }
-
-        DrawPanel(indicator.X, indicator.Y, indicator.Width, indicator.Height, new Color(170, 32, 32, 110));
-        DrawFrame(indicator, new Color(220, 86, 86), 2);
-    }
-
-    private void DrawOverworldInset(RectangleF view)
-    {
-        var inset = new RectangleF(view.X + 18, view.Bottom - 126, 164, 94);
-        DrawPanel(inset.X, inset.Y, inset.Width, inset.Height, new Color(16, 18, 24, 230));
-        DrawFrame(inset, new Color(86, 94, 116), 1);
-        DrawText("SURVEY", new Vector2(inset.X + 8, inset.Y + 8), new Color(168, 176, 194), 1);
-
-        const float cell = 22.0f;
-        for (var gy = -1; gy <= 1; gy++)
-        {
-            for (var gx = -2; gx <= 2; gx++)
-            {
-                var point = new GridPoint(playerCell.X + gx, playerCell.Y + gy);
-                var symbol = GetCrawlerCellSymbol(point, isDungeonView: false);
-                var rect = new RectangleF(inset.X + 18 + ((gx + 2) * (cell + 4)), inset.Y + 28 + ((gy + 1) * (cell + 4)), cell, cell);
-                var color = GetOverworldInsetColor(symbol);
-                if (point == playerCell)
-                {
-                    color = new Color(168, 138, 84);
-                }
-                else if (hasPendingMove && point == pendingMoveTarget)
-                {
-                    color = new Color(176, 56, 56);
-                }
-
-                DrawPanel(rect.X, rect.Y, rect.Width, rect.Height, color);
-                DrawFrame(rect, new Color(12, 14, 18), 1);
-            }
-        }
-    }
-
-    private void DrawDungeonInset(RectangleF view)
-    {
-        if (dungeon is null)
-        {
-            return;
-        }
-
-        var inset = new RectangleF(view.X + 18, view.Bottom - 126, 164, 94);
-        DrawPanel(inset.X, inset.Y, inset.Width, inset.Height, new Color(16, 18, 24, 230));
-        DrawFrame(inset, new Color(86, 94, 116), 1);
-        DrawText("FORMATION", new Vector2(inset.X + 8, inset.Y + 8), new Color(168, 176, 194), 1);
-
-        const float cell = 22.0f;
-        for (var gy = -1; gy <= 1; gy++)
-        {
-            for (var gx = -2; gx <= 2; gx++)
-            {
-                var point = new GridPoint(dungeonCell.X + gx, dungeonCell.Y + gy);
-                var symbol = GetCrawlerCellSymbol(point, isDungeonView: true);
-                var rect = new RectangleF(inset.X + 18 + ((gx + 2) * (cell + 4)), inset.Y + 28 + ((gy + 1) * (cell + 4)), cell, cell);
-                var color = IsBlockedCrawlerSymbol(symbol, isDungeonView: true) ? new Color(60, 62, 68) : new Color(42, 48, 60);
-                if (point == dungeonCell)
-                {
-                    color = new Color(168, 138, 84);
-                }
-                else if (hasPendingMove && point == pendingMoveTarget)
-                {
-                    color = new Color(176, 56, 56);
-                }
-                else if (symbol is 'M' or 'B')
-                {
-                    color = new Color(128, 64, 64);
-                }
-
-                DrawPanel(rect.X, rect.Y, rect.Width, rect.Height, color);
-                DrawFrame(rect, new Color(12, 14, 18), 1);
-            }
-        }
-    }
-
     private void DrawDungeonPortraitStrip(RectangleF view)
     {
         var top = view.Y + 472.0f;
         for (var i = 0; i < party.Members.Count; i++)
         {
+            var member = party.Members[i];
             var card = new RectangleF(view.X + 206 + (i * 112), top, 96, 96);
-            var source = new RectangleF(i * 128, 0, 90, 90);
+            var portraitIndex = i switch
+            {
+                0 => 1,
+                1 => 0,
+                _ => i,
+            };
+            var source = new RectangleF(portraitIndex * 128, 0, 90, 90);
+            var portraitRect = new RectangleF(card.X + 3, card.Y - 3, 90, 90);
             DrawPanel(card.X, card.Y, card.Width, card.Height, new Color(16, 18, 22, 220));
             DrawFrame(card, new Color(92, 86, 74), 2);
-            spriteBatch.Draw(grimPortraitTexture, UiRect(new RectangleF(card.X + 3, card.Y - 3, 90, 90)), source, Color.White, 0, Vector2.Zero);
+            spriteBatch.Draw(grimPortraitTexture, UiRect(portraitRect), source, Color.White, 0, Vector2.Zero);
+            var missingRatio = 1.0f - (member.Health / (float)Math.Max(1, member.MaxHealth));
+            if (missingRatio > 0.0f)
+            {
+                var overlayHeight = portraitRect.Height * missingRatio;
+                var overlayRect = new RectangleF(portraitRect.X, portraitRect.Bottom - overlayHeight, portraitRect.Width, overlayHeight);
+                DrawPanel(overlayRect.X, overlayRect.Y, overlayRect.Width, overlayRect.Height, new Color(168, 28, 28, 108));
+            }
             DrawPanel(card.X + 3, card.Bottom - 17, 90, 12, new Color(8, 10, 14, 200));
-            DrawText($"{party.Members[i].Name}", new Vector2(card.X + 6, card.Bottom - 16), party.Members[i].IsAlive ? new Color(228, 228, 236) : new Color(122, 122, 132), 1);
+            DrawText($"{member.Name} {member.Health}/{member.MaxHealth}", new Vector2(card.X + 6, card.Bottom - 16), member.IsAlive ? new Color(228, 228, 236) : new Color(122, 122, 132), 1);
         }
     }
 
@@ -3171,9 +3035,6 @@ public sealed class NotimaGame : Game
         DrawText("STATUS", new Vector2(HudX + 22, 450), new Color(178, 150, 96), 2);
         DrawWrappedText(statusLine, new Vector2(HudX + 22, 480), 2, HudWidth - 44, new Color(166, 170, 180));
 
-        DrawText("PARTY", new Vector2(HudX + 22, 550), new Color(178, 150, 96), 2);
-        DrawPartyBanner(new Vector2(HudX + 22, 574));
-
         DrawText("MOVE WASD OR ARROWS", new Vector2(HudX + 22, 622), new Color(126, 145, 172), 2);
         DrawText("ENTER INTERACTS", new Vector2(HudX + 22, 648), new Color(126, 145, 172), 2);
         DrawText("F5 SAVE  F9 LOAD  F10 DUNGEON", new Vector2(HudX + 22, 674), new Color(126, 145, 172), 2);
@@ -3181,18 +3042,18 @@ public sealed class NotimaGame : Game
 
     private void DrawMinimapOverlay()
     {
-        var panel = new RectangleF(468, 38, 228, 178);
+        var panel = new RectangleF(70, 524, 182, 96);
         DrawPanel(panel.X, panel.Y, panel.Width, panel.Height, new Color(16, 20, 28, 222));
         DrawFrame(panel, new Color(114, 126, 152), 2);
         DrawText(dungeon is null ? "MINIMAP" : "DUNGEON MAP", new Vector2(panel.X + 10, panel.Y + 8), new Color(198, 182, 140), 1);
 
-        var mapArea = new RectangleF(panel.X + 10, panel.Y + 26, panel.Width - 20, dungeon is null && ShowProjectionDebug ? panel.Height - 58 : panel.Height - 36);
+        var mapArea = new RectangleF(panel.X + 8, panel.Y + 22, panel.Width - 16, panel.Height - 30);
         DrawPanel(mapArea.X, mapArea.Y, mapArea.Width, mapArea.Height, new Color(10, 14, 18, 216));
         DrawFrame(mapArea, new Color(72, 82, 102), 1);
 
-        const float cell = 7.0f;
         var rows = dungeon is null ? map.Rows : dungeon.Rows;
         var currentCell = dungeon is null ? playerCell : dungeonCell;
+        var cell = dungeon is null ? 5.0f : 6.0f;
         var originX = mapArea.Center.X - ((currentCell.X + 0.5f) * cell);
         var originY = mapArea.Center.Y - ((currentCell.Y + 0.5f) * cell);
 
@@ -3231,12 +3092,6 @@ public sealed class NotimaGame : Game
         };
         DrawPanel(facingTip.X, facingTip.Y, facingTip.Width, facingTip.Height, new Color(255, 220, 180));
 
-        if (dungeon is null && ShowProjectionDebug)
-        {
-            var debugOrigin = new Vector2(panel.X + 10, panel.Bottom - 24);
-            DrawText(GetProjectionDebugLine(1), debugOrigin, new Color(168, 188, 206), 1);
-            DrawText(GetProjectionDebugLine(3), new Vector2(debugOrigin.X, debugOrigin.Y + 10), new Color(146, 166, 186), 1);
-        }
     }
 
     private string GetProjectionDebugLine(int depth)
@@ -3332,22 +3187,6 @@ public sealed class NotimaGame : Game
 
         DrawText("LEFT RIGHT SELECT", new Vector2(rect.X + 24, rect.Bottom - 40), new Color(126, 145, 172), 2);
         DrawText("ENTER CONFIRMS  R LEAVES", new Vector2(rect.X + 24, rect.Bottom - 18), new Color(126, 145, 172), 2);
-    }
-
-    private void DrawPartyBanner(Vector2 origin)
-    {
-        for (var i = 0; i < party.Members.Count; i++)
-        {
-            var member = party.Members[i];
-            var frame = GetPlayerSourceFrameFor(i == 0 ? facing : Direction.Down, ((int)(totalTime * 6.0f) + i) % 3, i);
-            var sourceRect = new RectangleF(frame.X, frame.Y, frame.Width, frame.Height);
-            var bounce = MathF.Sin((totalTime * 5.0f) + i) * 2.0f;
-            var destination = new RectangleF(origin.X + (i * 42.0f), origin.Y + bounce, 30.0f, 30.0f);
-            spriteBatch.Draw(whiteTexture, UiRect(new RectangleF(destination.X + 4.0f, destination.Y + destination.Height - 3.0f, destination.Width - 8.0f, 2.0f)), new Color(0, 0, 0, 56));
-            var tint = member.IsAlive ? member.Tint : new Color(84, 92, 112);
-            spriteBatch.Draw(playerTexture, UiRect(destination), sourceRect, tint, 0, Vector2.Zero);
-            DrawText($"{member.Health}/{member.MaxHealth}", new Vector2(destination.X - 2.0f, destination.Bottom + 6.0f), member.IsAlive ? new Color(220, 230, 255) : new Color(130, 136, 148), 1);
-        }
     }
 
     private void DrawEncounterAnimation(RectangleF panelRect)
