@@ -42,6 +42,12 @@ public sealed class NotimaGame : Game
         ['C'] = new("Camp", new Color(255, 169, 137), true, new Rectangle(80, 48, 16, 16), "A lonely campfire marks a traveler stop."),
         ['D'] = new("Dungeon", new Color(214, 136, 136), true, new Rectangle(0, 64, 16, 16), "A dungeon mouth opens in the earth."),
         ['P'] = new("Path", new Color(206, 224, 144), true, new Rectangle(80, 16, 16, 16), "A narrow track worn by many feet."),
+        ['#'] = new("Wall", new Color(80, 80, 80), false, new Rectangle(64, 32, 16, 16), "Wet stone and old mortar block the way."),
+        ['<'] = new("Stairs Up", new Color(160, 160, 160), true, new Rectangle(0, 64, 16, 16), "Stairs leading back to the surface."),
+        ['>'] = new("Stairs Down", new Color(160, 160, 160), true, new Rectangle(0, 64, 16, 16), "Stairs descending deeper underground."),
+        ['G'] = new("Chest", new Color(180, 150, 90), true, new Rectangle(32, 48, 16, 16), "A heavy chest sits unopened."),
+        ['M'] = new("Threat", new Color(160, 90, 90), true, new Rectangle(32, 0, 16, 16), "Something living moves in the dark."),
+        ['L'] = new("Fountain", new Color(140, 170, 190), true, new Rectangle(48, 48, 16, 16), "A black fountain glimmers with cold water."),
     };
 
     private readonly Dictionary<char, string[]> glyphs = BitmapFont.Create();
@@ -55,10 +61,13 @@ public sealed class NotimaGame : Game
     private Texture enemyTexture = null!;
     private OverworldMap map = null!;
     private GridPoint playerCell;
+    private DungeonState? dungeon;
+    private GridPoint dungeonCell;
     private Direction facing = Direction.Down;
     private UiMode uiMode;
     private PartyState party = new();
     private EncounterState? encounter;
+    private TownMenuState? townMenu;
     private string panelTitle = string.Empty;
     private List<string> panelLines = [];
     private string statusLine = "Find the road east and the old dungeon south.";
@@ -156,6 +165,12 @@ public sealed class NotimaGame : Game
 
         switch (uiMode)
         {
+            case UiMode.Town:
+                HandleTownInput();
+                return;
+            case UiMode.Dungeon:
+                HandleDungeonInput();
+                return;
             case UiMode.Encounter:
                 HandleEncounterInput();
                 return;
@@ -238,11 +253,101 @@ public sealed class NotimaGame : Game
         }
     }
 
+    private void HandleTownInput()
+    {
+        if (townMenu is null)
+        {
+            uiMode = dungeon is null ? UiMode.Overworld : UiMode.Dungeon;
+            return;
+        }
+
+        if (Input.IsKeyPressed(Keys.Up) || Input.IsKeyPressed(Keys.W))
+        {
+            townMenu.SelectedIndex = (townMenu.SelectedIndex - 1 + townMenu.Options.Count) % townMenu.Options.Count;
+            RefreshTownPanel();
+            return;
+        }
+
+        if (Input.IsKeyPressed(Keys.Down) || Input.IsKeyPressed(Keys.S))
+        {
+            townMenu.SelectedIndex = (townMenu.SelectedIndex + 1) % townMenu.Options.Count;
+            RefreshTownPanel();
+            return;
+        }
+
+        if (Input.IsKeyPressed(Keys.Enter) || Input.IsKeyPressed(Keys.Space))
+        {
+            ExecuteTownOption();
+            return;
+        }
+
+        if (Input.IsKeyPressed(Keys.R) || Input.IsKeyPressed(Keys.Escape))
+        {
+            CloseTownMenu("You step back onto the road.");
+        }
+    }
+
+    private void HandleDungeonInput()
+    {
+        if (dungeon is null)
+        {
+            uiMode = UiMode.Overworld;
+            return;
+        }
+
+        if (Input.IsKeyPressed(Keys.Enter) || Input.IsKeyPressed(Keys.Space))
+        {
+            InteractWithDungeonTile();
+            return;
+        }
+
+        if (Input.IsKeyPressed(Keys.R))
+        {
+            LeaveDungeon("You withdraw from the dungeon.");
+            return;
+        }
+
+        if (moveCooldown > 0.0f)
+        {
+            return;
+        }
+
+        var delta = GridPoint.Zero;
+        if (Input.IsKeyPressed(Keys.Up) || Input.IsKeyPressed(Keys.W))
+        {
+            delta = new GridPoint(0, -1);
+            facing = Direction.Up;
+        }
+        else if (Input.IsKeyPressed(Keys.Down) || Input.IsKeyPressed(Keys.S))
+        {
+            delta = new GridPoint(0, 1);
+            facing = Direction.Down;
+        }
+        else if (Input.IsKeyPressed(Keys.Left) || Input.IsKeyPressed(Keys.A))
+        {
+            delta = new GridPoint(-1, 0);
+            facing = Direction.Left;
+        }
+        else if (Input.IsKeyPressed(Keys.Right) || Input.IsKeyPressed(Keys.D))
+        {
+            delta = new GridPoint(1, 0);
+            facing = Direction.Right;
+        }
+
+        if (delta == GridPoint.Zero)
+        {
+            return;
+        }
+
+        moveCooldown = MoveRepeatDelay;
+        TryMoveDungeon(delta);
+    }
+
     private void HandleDialogInput()
     {
         if (Input.IsKeyPressed(Keys.Enter) || Input.IsKeyPressed(Keys.Space))
         {
-            uiMode = UiMode.Overworld;
+            uiMode = dungeon is null ? UiMode.Overworld : UiMode.Dungeon;
             panelTitle = string.Empty;
             panelLines.Clear();
         }
@@ -272,6 +377,8 @@ public sealed class NotimaGame : Game
         };
         party.ResetMembers(6);
         encounter = null;
+        townMenu = null;
+        dungeon = null;
         panelTitle = string.Empty;
         panelLines.Clear();
         uiMode = UiMode.Overworld;
@@ -283,6 +390,34 @@ public sealed class NotimaGame : Game
     {
         LoadMapFromDisk();
         statusLine = "The overworld settles back into place.";
+    }
+
+    private void TryMoveDungeon(GridPoint delta)
+    {
+        if (dungeon is null)
+        {
+            return;
+        }
+
+        var target = new GridPoint(dungeonCell.X + delta.X, dungeonCell.Y + delta.Y);
+        if (target.X < 0 || target.Y < 0 || target.X >= dungeon.Width || target.Y >= dungeon.Height)
+        {
+            statusLine = "Cold stone blocks the way.";
+            return;
+        }
+
+        var symbol = dungeon.Rows[target.Y][target.X];
+        var tile = GetTileDefinition(symbol);
+        if (!tile.Walkable)
+        {
+            statusLine = "A dungeon wall blocks the way.";
+            return;
+        }
+
+        dungeonCell = target;
+        walkFrame = (walkFrame + 1) % 3;
+        statusLine = DescribeCurrentTile();
+        ResolveDungeonStep(symbol);
     }
 
     private void TryMove(GridPoint delta)
@@ -460,6 +595,8 @@ public sealed class NotimaGame : Game
         party.ResetMembers(6 + ((party.Level - 1) * 2));
         party.Gold = Math.Max(0, party.Gold - 12);
         playerCell = new GridPoint(map.Start.X, map.Start.Y);
+        dungeon = null;
+        townMenu = null;
         encounter = null;
         OpenDialog(
             "DEFEAT",
@@ -473,124 +610,349 @@ public sealed class NotimaGame : Game
 
     private void InteractWithCurrentTile()
     {
+        if (dungeon is not null)
+        {
+            InteractWithDungeonTile();
+            return;
+        }
+
         var symbol = map.Rows[playerCell.Y][playerCell.X];
         switch (symbol)
         {
             case 'T':
             case 'H':
             case 'C':
-                HealAllPartyMembers();
-                party.Food += 18;
-                OpenDialog(
-                    symbol switch
-                    {
-                        'T' => "TOWN",
-                        'H' => "HARBOR",
-                        _ => "CAMP",
-                    },
-                    "YOU REST AND RECOVER.",
-                    "HEALTH FULLY RESTORED.",
-                    "FOOD +18",
-                    "ENTER CONTINUES"
-                );
-                statusLine = "The party rests and resupplies.";
+                OpenTownMenu(symbol);
                 break;
             case 'K':
-                if (party.Gold >= 30)
-                {
-                    party.Gold -= 30;
-                    party.Level++;
-                    RaisePartyMaxHealth(2);
-                    HealAllPartyMembers();
-                    OpenDialog(
-                        "KEEP",
-                        "THE LORD'S CAPTAIN TRAINS YOU.",
-                        $"LEVEL IS NOW {party.Level}.",
-                        "EACH MEMBER HP +2",
-                        "ENTER CONTINUES"
-                    );
-                    statusLine = "Training at the keep hardens the party.";
-                }
-                else
-                {
-                    OpenDialog(
-                        "KEEP",
-                        "THE CAPTAIN OFFERS TRAINING",
-                        "FOR 30 GOLD.",
-                        "YOU CANNOT PAY YET.",
-                        "ENTER CONTINUES"
-                    );
-                    statusLine = "The keep demands gold for training.";
-                }
-
+                OpenTownMenu(symbol);
                 break;
             case 'S':
-                if (visitedLandmarks.Add(playerCell))
-                {
-                    RaisePartyMaxHealth(1);
-                    HealAllPartyMembers();
-                    OpenDialog(
-                        "SHRINE",
-                        "A QUIET BLESSING FALLS.",
-                        "EACH MEMBER HP +1",
-                        "THE PARTY IS HEALED.",
-                        "ENTER CONTINUES"
-                    );
-                    statusLine = "The shrine grants a lasting blessing.";
-                }
-                else
-                {
-                    OpenDialog(
-                        "SHRINE",
-                        "THE SHRINE IS STILL.",
-                        "YOU TAKE A MOMENT TO BREATHE.",
-                        "NOT EVERY GIFT REPEATS.",
-                        "ENTER CONTINUES"
-                    );
-                    statusLine = "The shrine has no new blessing today.";
-                }
-
+                OpenTownMenu(symbol);
                 break;
             case 'R':
-                if (visitedLandmarks.Add(playerCell))
-                {
-                    var loot = random.Next(12, 29);
-                    party.Gold += loot;
-                    OpenDialog(
-                        "RUINS",
-                        "BROKEN STONE HIDES A CACHE.",
-                        $"GOLD +{loot}",
-                        "NOT ALL EMPIRES VANISH CLEANLY.",
-                        "ENTER CONTINUES"
-                    );
-                    statusLine = "You found coin in the ruins.";
-                }
-                else
-                {
-                    OpenDialog(
-                        "RUINS",
-                        "YOU SEARCH THE BROKEN WALLS.",
-                        "THE PLACE IS EMPTY NOW.",
-                        "",
-                        "ENTER CONTINUES"
-                    );
-                    statusLine = "The ruins have already yielded their secrets.";
-                }
-
+                OpenTownMenu(symbol);
                 break;
             case 'D':
-                OpenDialog(
-                    "DUNGEON",
-                    "STONE STAIRS DESCEND INTO DARKNESS.",
-                    "THE DUNGEON CRAWL IS NOT YET",
-                    "IMPLEMENTED IN THIS BUILD.",
-                    "ENTER CONTINUES"
-                );
-                statusLine = "The dungeon waits for a deeper game system.";
+                EnterDungeon();
                 break;
             default:
                 statusLine = DescribeCurrentTile();
                 break;
+        }
+    }
+
+    private void OpenTownMenu(char symbol)
+    {
+        townMenu = TownMenuState.Create(symbol);
+        uiMode = UiMode.Town;
+        RefreshTownPanel();
+    }
+
+    private void RefreshTownPanel()
+    {
+        if (townMenu is null)
+        {
+            return;
+        }
+
+        panelTitle = townMenu.Title;
+        panelLines =
+        [
+            townMenu.Description,
+            "",
+            .. townMenu.Options.Select((option, index) => $"{(index == townMenu.SelectedIndex ? ">" : " ")} {option}"),
+            "",
+            "ENTER CHOOSES  R LEAVES"
+        ];
+    }
+
+    private void ExecuteTownOption()
+    {
+        if (townMenu is null)
+        {
+            return;
+        }
+
+        var choice = townMenu.Options[townMenu.SelectedIndex];
+        switch (townMenu.Symbol)
+        {
+            case 'T':
+            case 'H':
+            case 'C':
+                ExecuteRestTownOption(choice);
+                break;
+            case 'K':
+                ExecuteKeepOption(choice);
+                break;
+            case 'S':
+                ExecuteShrineOption(choice);
+                break;
+            case 'R':
+                ExecuteRuinsOption(choice);
+                break;
+        }
+    }
+
+    private void ExecuteRestTownOption(string choice)
+    {
+        switch (choice)
+        {
+            case "REST - 8 GOLD":
+                if (party.Gold < 8)
+                {
+                    statusLine = "You cannot afford a safe room.";
+                    return;
+                }
+
+                party.Gold -= 8;
+                HealAllPartyMembers();
+                statusLine = "The party rests behind stout doors.";
+                break;
+            case "BUY RATIONS +25 FOOD - 6 GOLD":
+                if (party.Gold < 6)
+                {
+                    statusLine = "You cannot afford provisions.";
+                    return;
+                }
+
+                party.Gold -= 6;
+                party.Food += 25;
+                statusLine = "You buy dried meat and hard bread.";
+                break;
+            default:
+                CloseTownMenu("You step back onto the road.");
+                return;
+        }
+
+        CloseTownMenu(statusLine);
+    }
+
+    private void ExecuteKeepOption(string choice)
+    {
+        if (choice == "LEAVE")
+        {
+            CloseTownMenu("You leave the keep yard.");
+            return;
+        }
+
+        if (party.Gold < 30)
+        {
+            statusLine = "The captain demands 30 gold for training.";
+            return;
+        }
+
+        party.Gold -= 30;
+        party.Level++;
+        RaisePartyMaxHealth(2);
+        HealAllPartyMembers();
+        CloseTownMenu("Training at the keep hardens the party.");
+    }
+
+    private void ExecuteShrineOption(string choice)
+    {
+        if (choice == "LEAVE")
+        {
+            CloseTownMenu("The shrine falls silent behind you.");
+            return;
+        }
+
+        if (visitedLandmarks.Add(playerCell))
+        {
+            RaisePartyMaxHealth(1);
+            HealAllPartyMembers();
+            CloseTownMenu("A quiet blessing settles over the party.");
+            return;
+        }
+
+        HealAllPartyMembers();
+        CloseTownMenu("The shrine offers only a moment of peace.");
+    }
+
+    private void ExecuteRuinsOption(string choice)
+    {
+        if (choice == "LEAVE")
+        {
+            CloseTownMenu("You leave the broken stones undisturbed.");
+            return;
+        }
+
+        if (visitedLandmarks.Add(playerCell))
+        {
+            var loot = random.Next(12, 29);
+            party.Gold += loot;
+            CloseTownMenu($"You find {loot} gold in the rubble.");
+            return;
+        }
+
+        var scrap = random.Next(0, 2) == 0 ? 0 : random.Next(2, 7);
+        party.Gold += scrap;
+        CloseTownMenu(scrap == 0 ? "The ruins are mostly picked clean." : $"You salvage {scrap} gold worth of scrap.");
+    }
+
+    private void CloseTownMenu(string message)
+    {
+        townMenu = null;
+        panelTitle = string.Empty;
+        panelLines.Clear();
+        uiMode = dungeon is null ? UiMode.Overworld : UiMode.Dungeon;
+        statusLine = message;
+    }
+
+    private void EnterDungeon()
+    {
+        dungeon = GenerateDungeonLevel(1);
+        dungeonCell = dungeon.Start;
+        uiMode = UiMode.Dungeon;
+        statusLine = "You descend into cold stone and torch smoke.";
+    }
+
+    private void InteractWithDungeonTile()
+    {
+        if (dungeon is null)
+        {
+            return;
+        }
+
+        var symbol = dungeon.Rows[dungeonCell.Y][dungeonCell.X];
+        switch (symbol)
+        {
+            case '<':
+                LeaveDungeon("You climb back into daylight.");
+                break;
+            case '>':
+                dungeon = GenerateDungeonLevel(dungeon.Level + 1);
+                dungeonCell = dungeon.Start;
+                statusLine = $"You descend to dungeon level {dungeon.Level}.";
+                break;
+            case 'G':
+                CollectDungeonTreasure();
+                break;
+            case 'L':
+                HealAllPartyMembers();
+                SetDungeonTile(dungeonCell, '.');
+                statusLine = "A cold fountain restores the party.";
+                break;
+            default:
+                statusLine = DescribeCurrentTile();
+                break;
+        }
+    }
+
+    private void ResolveDungeonStep(char symbol)
+    {
+        switch (symbol)
+        {
+            case 'M':
+                SetDungeonTile(dungeonCell, '.');
+                var encounterTile = new TileDefinition("Dungeon", Color.White, true, new Rectangle(), "Dungeon threat");
+                MaybeTriggerEncounter(encounterTile);
+                if (encounter is not null)
+                {
+                    statusLine = "Something stirs in the dark.";
+                }
+                break;
+            case 'G':
+                statusLine = "A chest lies here. Press Enter to open it.";
+                break;
+            case '>':
+                statusLine = "A stair descends into a deeper dark.";
+                break;
+            case '<':
+                statusLine = "Stone stairs rise back to the surface.";
+                break;
+            case 'L':
+                statusLine = "A black fountain reflects dim light.";
+                break;
+        }
+    }
+
+    private void LeaveDungeon(string message)
+    {
+        dungeon = null;
+        dungeonCell = GridPoint.Zero;
+        uiMode = UiMode.Overworld;
+        statusLine = message;
+    }
+
+    private void CollectDungeonTreasure()
+    {
+        if (dungeon is null)
+        {
+            return;
+        }
+
+        var gold = random.Next(8, 20) + (dungeon.Level * 3);
+        var food = random.Next(0, 2) == 0 ? 0 : random.Next(4, 10);
+        party.Gold += gold;
+        party.Food += food;
+        SetDungeonTile(dungeonCell, '.');
+        statusLine = food > 0 ? $"You recover {gold} gold and {food} food." : $"You recover {gold} gold.";
+    }
+
+    private void SetDungeonTile(GridPoint point, char symbol)
+    {
+        if (dungeon is null)
+        {
+            return;
+        }
+
+        var row = dungeon.Rows[point.Y].ToCharArray();
+        row[point.X] = symbol;
+        dungeon.Rows[point.Y] = new string(row);
+    }
+
+    private DungeonState GenerateDungeonLevel(int level)
+    {
+        var rows = new List<string>();
+        const int size = 12;
+        for (var y = 0; y < size; y++)
+        {
+            var chars = new char[size];
+            for (var x = 0; x < size; x++)
+            {
+                chars[x] = x == 0 || y == 0 || x == size - 1 || y == size - 1 ? '#' : '.';
+            }
+
+            rows.Add(new string(chars));
+        }
+
+        var state = new DungeonState
+        {
+            Level = level,
+            Rows = rows,
+            Start = new GridPoint(1, size - 2)
+        };
+
+        state.SetTile(state.Start, '<');
+        state.SetTile(new GridPoint(size - 2, 1), '>');
+        state.SetTile(new GridPoint(size / 2, size / 2), 'L');
+
+        var monsters = 3 + level;
+        for (var i = 0; i < monsters; i++)
+        {
+            PlaceDungeonFeature(state, 'M');
+        }
+
+        var treasures = 2 + (level / 2);
+        for (var i = 0; i < treasures; i++)
+        {
+            PlaceDungeonFeature(state, 'G');
+        }
+
+        return state;
+    }
+
+    private void PlaceDungeonFeature(DungeonState state, char symbol)
+    {
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            var point = new GridPoint(random.Next(1, state.Width - 1), random.Next(1, state.Height - 1));
+            if (state.GetTile(point) == '.')
+            {
+                state.SetTile(point, symbol);
+                return;
+            }
         }
     }
 
@@ -603,8 +965,12 @@ public sealed class NotimaGame : Game
 
     private string DescribeCurrentTile()
     {
-        var tile = GetTileDefinition(map.Rows[playerCell.Y][playerCell.X]);
-        var baseText = $"[{playerCell.X},{playerCell.Y}] {tile.Name}";
+        var symbol = dungeon is null ? map.Rows[playerCell.Y][playerCell.X] : dungeon.Rows[dungeonCell.Y][dungeonCell.X];
+        var tile = GetTileDefinition(symbol);
+        var location = dungeon is null
+            ? $"[{playerCell.X},{playerCell.Y}]"
+            : $"[D{dungeon.Level}:{dungeonCell.X},{dungeonCell.Y}]";
+        var baseText = $"{location} {tile.Name}";
         return string.IsNullOrWhiteSpace(tile.InspectText) ? baseText : $"{baseText}: {tile.InspectText}";
     }
 
@@ -642,9 +1008,12 @@ public sealed class NotimaGame : Game
         DrawPanel(28, 28, 692, 664, new Color(26, 35, 49, 240));
         DrawFrame(new RectangleF(28, 28, 692, 664), new Color(102, 124, 171), 2);
 
-        for (var y = 0; y < map.Rows.Count; y++)
+        var rows = dungeon is null ? map.Rows : dungeon.Rows;
+        var currentCell = dungeon is null ? playerCell : dungeonCell;
+
+        for (var y = 0; y < rows.Count; y++)
         {
-            var row = map.Rows[y];
+            var row = rows[y];
             for (var x = 0; x < row.Length; x++)
             {
                 var symbol = row[x];
@@ -655,12 +1024,12 @@ public sealed class NotimaGame : Game
             }
         }
 
-        var cursorDestination = GetIsoHighlightDestination(playerCell.X, playerCell.Y);
+        var cursorDestination = GetIsoHighlightDestination(currentCell.X, currentCell.Y);
         spriteBatch.Draw(whiteTexture, cursorDestination, new Color(156, 138, 78, 26));
         DrawFrame(cursorDestination, new Color(170, 148, 84), 2);
 
         var playerFrame = GetPlayerSourceFrame(0);
-        var playerDestination = GetIsoCharacterDestination(playerCell.X, playerCell.Y, 0.0f);
+        var playerDestination = GetIsoCharacterDestination(currentCell.X, currentCell.Y, 0.0f);
 
         DrawPartyTrail(cursorDestination);
         spriteBatch.Draw(whiteTexture, new RectangleF(playerDestination.X + 10.0f, playerDestination.Y + playerDestination.Height - 6.0f, playerDestination.Width - 20.0f, 4.0f), new Color(0, 0, 0, 82));
@@ -736,7 +1105,7 @@ public sealed class NotimaGame : Game
         DrawFrame(new RectangleF(HudX, 28, HudWidth, 664), new Color(108, 126, 173), 2);
 
         DrawText("NOTIMA", new Vector2(HudX + 22, 46), new Color(178, 150, 96), 3);
-        DrawText(map.Name, new Vector2(HudX + 22, 88), new Color(124, 142, 174), 2);
+        DrawText(dungeon is null ? map.Name : $"DUNGEON LV {dungeon.Level}", new Vector2(HudX + 22, 88), new Color(124, 142, 174), 2);
 
         DrawText($"HP {party.TotalHealth}/{party.MaxTotalHealth}", new Vector2(HudX + 22, 138), party.TotalHealth > (party.MaxTotalHealth / 2) ? new Color(108, 156, 113) : new Color(170, 111, 111), 2);
         DrawText($"FOOD {party.Food}", new Vector2(HudX + 22, 168), new Color(171, 150, 99), 2);
@@ -1354,6 +1723,90 @@ internal sealed class PartyMember(string name, Color tint, int maxHealth)
     public bool IsAlive => Health > 0;
 }
 
+internal sealed class TownMenuState
+{
+    public char Symbol { get; init; }
+
+    public string Title { get; init; } = string.Empty;
+
+    public string Description { get; init; } = string.Empty;
+
+    public List<string> Options { get; init; } = [];
+
+    public int SelectedIndex { get; set; }
+
+    public static TownMenuState Create(char symbol)
+    {
+        return symbol switch
+        {
+            'T' => new TownMenuState
+            {
+                Symbol = symbol,
+                Title = "TOWN",
+                Description = "Lantern light, bread ovens, and closed shutters.",
+                Options = ["REST - 8 GOLD", "BUY RATIONS +25 FOOD - 6 GOLD", "LEAVE"],
+            },
+            'H' => new TownMenuState
+            {
+                Symbol = symbol,
+                Title = "HARBOR",
+                Description = "Salt wind and rope creak across dark piers.",
+                Options = ["REST - 8 GOLD", "BUY RATIONS +25 FOOD - 6 GOLD", "LEAVE"],
+            },
+            'C' => new TownMenuState
+            {
+                Symbol = symbol,
+                Title = "CAMP",
+                Description = "A guarded fire and a few quiet bedrolls.",
+                Options = ["REST - 8 GOLD", "BUY RATIONS +25 FOOD - 6 GOLD", "LEAVE"],
+            },
+            'K' => new TownMenuState
+            {
+                Symbol = symbol,
+                Title = "KEEP",
+                Description = "The captain will drill the party for 30 gold.",
+                Options = ["TRAIN - 30 GOLD", "LEAVE"],
+            },
+            'S' => new TownMenuState
+            {
+                Symbol = symbol,
+                Title = "SHRINE",
+                Description = "A hush settles around old carved stone.",
+                Options = ["PRAY", "LEAVE"],
+            },
+            _ => new TownMenuState
+            {
+                Symbol = symbol,
+                Title = "RUINS",
+                Description = "Fallen masonry and wind through broken arches.",
+                Options = ["SEARCH", "LEAVE"],
+            },
+        };
+    }
+}
+
+internal sealed class DungeonState
+{
+    public int Level { get; set; }
+
+    public GridPoint Start { get; set; }
+
+    public List<string> Rows { get; set; } = [];
+
+    public int Width => Rows.Count == 0 ? 0 : Rows[0].Length;
+
+    public int Height => Rows.Count;
+
+    public char GetTile(GridPoint point) => Rows[point.Y][point.X];
+
+    public void SetTile(GridPoint point, char symbol)
+    {
+        var chars = Rows[point.Y].ToCharArray();
+        chars[point.X] = symbol;
+        Rows[point.Y] = new string(chars);
+    }
+}
+
 internal sealed class EncounterState
 {
     public string Name { get; init; } = string.Empty;
@@ -1437,6 +1890,8 @@ internal sealed class EnemyUnit(string name, int maxHealth, int attackMin, int a
 internal enum UiMode
 {
     Overworld,
+    Town,
+    Dungeon,
     Encounter,
     Dialog,
 }
