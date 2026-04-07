@@ -104,7 +104,7 @@ public sealed class NotimaGame : Game
         spriteBatch = new SpriteBatch(GraphicsDevice);
         whiteTexture = GraphicsDevice.GetSharedWhiteTexture();
         tileTexture = LoadRgbaTexture("Content/Art/notima_isometric_tiles.rgba", 32, 264);
-        playerTexture = LoadRgbaTexture("Content/Art/notima_isometric_hero.rgba", 99, 132);
+        playerTexture = LoadRgbaTexture("Content/Art/notima_isometric_hero.rgba", 99, 528);
         LoadMapFromDisk();
         UpdateWindowTitle();
     }
@@ -660,7 +660,7 @@ public sealed class NotimaGame : Game
         spriteBatch.Draw(whiteTexture, cursorDestination, new Color(255, 244, 166, 34));
         DrawFrame(cursorDestination, new Color(255, 235, 119), 2);
 
-        var playerFrame = GetPlayerSourceFrame();
+        var playerFrame = GetPlayerSourceFrame(0);
         var playerDestination = GetIsoCharacterDestination(playerCell.X, playerCell.Y, 0.0f);
 
         DrawPartyTrail(cursorDestination);
@@ -671,7 +671,7 @@ public sealed class NotimaGame : Game
 
     private void DrawPartyTrail(RectangleF leaderTile)
     {
-        var source = GetPlayerSourceFrameFor(Direction.Down, (int)(totalTime * 8.0f) % 3);
+        var source = GetPlayerSourceFrameFor(Direction.Down, (int)(totalTime * 8.0f) % 3, 1);
         var sourceRect = new RectangleF(source.X, source.Y, source.Width, source.Height);
         var tints = new[]
         {
@@ -721,12 +721,7 @@ public sealed class NotimaGame : Game
         DrawFrame(new RectangleF(tileDestination.Center.X - 6.0f, tileDestination.Y + 19.0f, 12.0f, 12.0f), new Color(35, 20, 20), 1);
     }
 
-    private Rectangle GetPlayerSourceFrame()
-    {
-        return GetPlayerSourceFrameFor(facing, walkFrame);
-    }
-
-    private static Rectangle GetPlayerSourceFrameFor(Direction direction, int frame)
+    private static Rectangle GetPlayerSourceFrameFor(Direction direction, int frame, int roleIndex)
     {
         var row = direction switch
         {
@@ -744,8 +739,14 @@ public sealed class NotimaGame : Game
         };
 
         var x = column * IsoSheetPitch;
-        var y = row * IsoSheetPitch;
+        var roleBlock = Math.Clamp(roleIndex, 0, 3) * 4;
+        var y = (roleBlock + row) * IsoSheetPitch;
         return new Rectangle(x, y, IsoSheetCell, IsoSheetCell);
+    }
+
+    private Rectangle GetPlayerSourceFrame(int roleIndex)
+    {
+        return GetPlayerSourceFrameFor(facing, walkFrame, roleIndex);
     }
 
     private void DrawHud()
@@ -805,7 +806,7 @@ public sealed class NotimaGame : Game
         for (var i = 0; i < party.Members.Count; i++)
         {
             var member = party.Members[i];
-            var frame = GetPlayerSourceFrameFor(i == 0 ? facing : Direction.Down, ((int)(totalTime * 6.0f) + i) % 3);
+            var frame = GetPlayerSourceFrameFor(i == 0 ? facing : Direction.Down, ((int)(totalTime * 6.0f) + i) % 3, i);
             var sourceRect = new RectangleF(frame.X, frame.Y, frame.Width, frame.Height);
             var bounce = MathF.Sin((totalTime * 5.0f) + i) * 2.0f;
             var destination = new RectangleF(origin.X + (i * 42.0f), origin.Y + bounce, 30.0f, 30.0f);
@@ -835,7 +836,7 @@ public sealed class NotimaGame : Game
         for (var i = 0; i < party.Members.Count; i++)
         {
             var member = party.Members[i];
-            var frame = GetPlayerSourceFrameFor(i == 0 ? facing : Direction.Right, ((int)(totalTime * 7.0f) + i) % 3);
+            var frame = GetPlayerSourceFrameFor(i == 0 ? facing : Direction.Right, ((int)(totalTime * 7.0f) + i) % 3, i);
             var sourceRect = new RectangleF(frame.X, frame.Y, frame.Width, frame.Height);
             var bounce = MathF.Sin((totalTime * 7.0f) + (i * 0.7f)) * 2.4f;
             var tile = GetEncounterTileDestination(boardOrigin, i % 2, i / 2);

@@ -9,6 +9,6 @@ obj/
 *.log
 *.tmp
 *.pidb
+__pycache__/
 *.DS_Store
 assets/tmp/
-
