@@ -85,6 +85,8 @@ public sealed class NotimaGame : Game
     private int walkFrame;
     private bool encounterFromDungeon;
     private bool encounterIsBoss;
+    private CombatAction selectedCombatAction = CombatAction.Attack;
+    private SpellKind selectedSpell = SpellKind.Ember;
 
     public NotimaGame()
     {
@@ -246,6 +248,25 @@ public sealed class NotimaGame : Game
 
     private void HandleEncounterInput()
     {
+        if (Input.IsKeyPressed(Keys.Q))
+        {
+            selectedCombatAction = selectedCombatAction == CombatAction.Attack ? CombatAction.Spell : CombatAction.Attack;
+            statusLine = selectedCombatAction == CombatAction.Attack ? "Action set to attack." : $"Action set to spell: {GetSpellName(selectedSpell)}.";
+            return;
+        }
+
+        if (Input.IsKeyPressed(Keys.E) && selectedCombatAction == CombatAction.Spell)
+        {
+            selectedSpell = selectedSpell switch
+            {
+                SpellKind.Ember => SpellKind.Mend,
+                SpellKind.Mend => SpellKind.Aegis,
+                _ => SpellKind.Ember,
+            };
+            statusLine = $"Spell set to {GetSpellName(selectedSpell)}.";
+            return;
+        }
+
         if (Input.IsKeyPressed(Keys.Left) || Input.IsKeyPressed(Keys.A))
         {
             CycleEnemyTarget(-1);
@@ -278,14 +299,14 @@ public sealed class NotimaGame : Game
             return;
         }
 
-        if (Input.IsKeyPressed(Keys.Up) || Input.IsKeyPressed(Keys.W))
+        if (Input.IsKeyPressed(Keys.Left) || Input.IsKeyPressed(Keys.A) || Input.IsKeyPressed(Keys.Up) || Input.IsKeyPressed(Keys.W))
         {
             townMenu.SelectedIndex = (townMenu.SelectedIndex - 1 + townMenu.Options.Count) % townMenu.Options.Count;
             RefreshTownPanel();
             return;
         }
 
-        if (Input.IsKeyPressed(Keys.Down) || Input.IsKeyPressed(Keys.S))
+        if (Input.IsKeyPressed(Keys.Right) || Input.IsKeyPressed(Keys.D) || Input.IsKeyPressed(Keys.Down) || Input.IsKeyPressed(Keys.S))
         {
             townMenu.SelectedIndex = (townMenu.SelectedIndex + 1) % townMenu.Options.Count;
             RefreshTownPanel();
@@ -390,6 +411,8 @@ public sealed class NotimaGame : Game
             Level = 1,
             Food = 120,
             Gold = 30,
+            Mana = 12,
+            MaxMana = 12,
             WeaponTier = 0,
             ArmorTier = 0,
             Keys = 0,
@@ -501,6 +524,8 @@ public sealed class NotimaGame : Game
         };
         encounterFromDungeon = false;
         encounterIsBoss = false;
+        selectedCombatAction = CombatAction.Attack;
+        selectedSpell = SpellKind.Ember;
         selectedEnemyIndex = GetDefaultSelectedEnemy();
         attackingEnemyIndex = -1;
         attackedPartyMemberIndex = -1;
@@ -512,8 +537,8 @@ public sealed class NotimaGame : Game
         [
             $"A {encounter.Name} RUSHES IN.",
             $"FOES {encounter.AliveCount}/{encounter.Enemies.Count}",
-            "ARROWS PICK A TARGET",
-            "ENTER ATTACKS  R RETREATS",
+            $"Q MODE  E SPELL  {GetCombatSummary()}",
+            "ARROWS PICK TARGET  ENTER ACTS",
         ];
         statusLine = $"Encounter! {encounter.Name} blocks the road.";
         uiMode = UiMode.Encounter;
@@ -534,21 +559,41 @@ public sealed class NotimaGame : Game
             return;
         }
 
-        var attackerIndex = GetFrontAlivePartyIndex() ?? GetBackAlivePartyIndex() ?? 0;
-        attackingPartyMemberIndex = attackerIndex;
-        playerAttackAnimationTime = 0.24f;
+        var roundEvents = new List<string>();
 
-        var playerDamage = random.Next(4, 9) + party.Level;
-        playerDamage += party.WeaponTier * 2;
-        if (attackerIndex >= 2)
+        for (var partyIndex = 0; partyIndex < party.Members.Count; partyIndex++)
         {
-            playerDamage = Math.Max(2, playerDamage - 2);
-        }
+            if (!party.Members[partyIndex].IsAlive || encounter.AliveCount == 0)
+            {
+                continue;
+            }
 
-        target.Health = Math.Max(0, target.Health - playerDamage);
-        if (!target.IsAlive)
-        {
-            selectedEnemyIndex = GetDefaultSelectedEnemy();
+            attackingPartyMemberIndex = partyIndex;
+            playerAttackAnimationTime = 0.24f;
+
+            if (partyIndex == 0 && selectedCombatAction == CombatAction.Spell && TryCastSpell(roundEvents))
+            {
+                continue;
+            }
+
+            var actingTarget = GetSelectedEnemy() ?? encounter.Enemies.FirstOrDefault(enemyUnit => enemyUnit.IsAlive);
+            if (actingTarget is null)
+            {
+                break;
+            }
+
+            var playerDamage = random.Next(4, 9) + party.Level + (party.WeaponTier * 2);
+            if (partyIndex >= 2)
+            {
+                playerDamage = Math.Max(2, playerDamage - 2);
+            }
+
+            actingTarget.Health = Math.Max(0, actingTarget.Health - playerDamage);
+            roundEvents.Add($"{party.Members[partyIndex].Name} hits {actingTarget.Name} for {playerDamage}");
+            if (!actingTarget.IsAlive)
+            {
+                selectedEnemyIndex = GetDefaultSelectedEnemy();
+            }
         }
 
         if (encounter.AliveCount == 0)
@@ -557,28 +602,40 @@ public sealed class NotimaGame : Game
             return;
         }
 
-        var enemy = encounter.Enemies.FirstOrDefault(enemyUnit => enemyUnit.IsAlive);
-        attackingEnemyIndex = enemy is null ? -1 : encounter.Enemies.IndexOf(enemy);
-        enemyAttackAnimationTime = enemy is null ? 0.0f : 0.24f;
+        var wardReduction = party.WardCharges;
+        party.WardCharges = 0;
 
-        var targetPartyIndex = GetRandomAlivePartyIndex(preferFront: true) ?? 0;
-        attackedPartyMemberIndex = targetPartyIndex;
-
-        var enemyDamageBase = enemy is null ? 1 : random.Next(enemy.AttackMin, enemy.AttackMax + 1);
-        var enemyDamage = Math.Max(1, enemyDamageBase - (party.Level / 2) - party.ArmorTier);
-        if (targetPartyIndex >= 2 && GetFrontAlivePartyIndex() is not null)
+        foreach (var enemy in encounter.Enemies.Where(enemyUnit => enemyUnit.IsAlive).ToList())
         {
-            enemyDamage = Math.Max(1, enemyDamage - 2);
+            var enemyIndex = encounter.Enemies.IndexOf(enemy);
+            attackingEnemyIndex = enemyIndex;
+            enemyAttackAnimationTime = 0.24f;
+
+            var targetPartyIndex = GetRandomAlivePartyIndex(preferFront: true) ?? 0;
+            attackedPartyMemberIndex = targetPartyIndex;
+
+            var enemyDamageBase = random.Next(enemy.AttackMin, enemy.AttackMax + 1);
+            var enemyDamage = Math.Max(1, enemyDamageBase - (party.Level / 2) - party.ArmorTier - wardReduction);
+            if (targetPartyIndex >= 2 && GetFrontAlivePartyIndex() is not null)
+            {
+                enemyDamage = Math.Max(1, enemyDamage - 2);
+            }
+
+            DamagePartyMember(targetPartyIndex, enemyDamage);
+            roundEvents.Add($"{enemy.Name} hits {party.Members[targetPartyIndex].Name} for {enemyDamage}");
+            if (party.TotalHealth <= 0)
+            {
+                break;
+            }
         }
 
-        DamagePartyMember(targetPartyIndex, enemyDamage);
-        statusLine = $"You hit {target.Name} for {playerDamage}. {enemy?.Name ?? encounter.Name} answers for {enemyDamage}.";
+        statusLine = string.Join(". ", roundEvents.Take(3)) + (roundEvents.Count > 3 ? "..." : string.Empty);
         panelLines =
         [
             $"{target.Name} HP {target.Health}/{target.MaxHealth}",
             $"PARTY HP {party.TotalHealth}/{party.MaxTotalHealth}",
-            "ARROWS PICK A TARGET",
-            "ENTER ATTACKS  R RETREATS",
+            $"Q MODE  E SPELL  {GetCombatSummary()}",
+            "ARROWS PICK TARGET  ENTER ACTS",
         ];
 
         if (party.TotalHealth <= 0)
@@ -617,8 +674,8 @@ public sealed class NotimaGame : Game
         [
             $"A {encounter.Name} HOLDS YOU FAST.",
             $"PARTY HP {party.TotalHealth}/{party.MaxTotalHealth}",
-            "ARROWS PICK A TARGET",
-            "ENTER STRIKES BACK",
+            $"Q MODE  E SPELL  {GetCombatSummary()}",
+            "ARROWS PICK TARGET  ENTER ACTS",
         ];
 
         if (party.TotalHealth <= 0)
@@ -700,7 +757,7 @@ public sealed class NotimaGame : Game
             "",
             .. townMenu.Options.Select((option, index) => $"{(index == townMenu.SelectedIndex ? ">" : " ")} {option}"),
             "",
-            "ENTER CHOOSES  R LEAVES"
+            "LEFT RIGHT CHOOSE  ENTER CONFIRMS",
         ];
     }
 
@@ -765,25 +822,25 @@ public sealed class NotimaGame : Game
                 var weaponCost = GetWeaponUpgradeCost();
                 if (party.Gold < weaponCost)
                 {
-                    statusLine = $"A stronger weapon costs {weaponCost} gold.";
+                    statusLine = $"{GetNextWeaponName()} costs {weaponCost} gold.";
                     return;
                 }
 
                 party.Gold -= weaponCost;
                 party.WeaponTier++;
-                statusLine = $"The smith raises your weapon to tier {party.WeaponTier}.";
+                statusLine = $"The smith equips {GetWeaponName()}.";
                 break;
             case "BUY ARMOR +1":
                 var armorCost = GetArmorUpgradeCost();
                 if (party.Gold < armorCost)
                 {
-                    statusLine = $"Better armor costs {armorCost} gold.";
+                    statusLine = $"{GetNextArmorName()} costs {armorCost} gold.";
                     return;
                 }
 
                 party.Gold -= armorCost;
                 party.ArmorTier++;
-                statusLine = $"The outfitter raises your armor to tier {party.ArmorTier}.";
+                statusLine = $"The outfitter fits {GetArmorName()}.";
                 break;
             default:
                 CloseTownMenu("You step back onto the road.");
@@ -805,13 +862,13 @@ public sealed class NotimaGame : Game
                 var armorCost = GetArmorUpgradeCost();
                 if (party.Gold < armorCost)
                 {
-                    statusLine = $"Dockside mail costs {armorCost} gold.";
+                    statusLine = $"{GetNextArmorName()} costs {armorCost} gold.";
                     return;
                 }
 
                 party.Gold -= armorCost;
                 party.ArmorTier++;
-                CloseTownMenu($"A sea captain sells you armor tier {party.ArmorTier}.");
+                CloseTownMenu($"A sea captain sells you {GetArmorName()}.");
                 return;
             default:
                 CloseTownMenu("You leave the harbor behind.");
@@ -966,8 +1023,8 @@ public sealed class NotimaGame : Game
                 [
                     encounterIsBoss ? "A DREAD LORD EMERGES." : $"A {encounter.Name} RUSHES FROM THE DARK.",
                     $"FOES {encounter.AliveCount}/{encounter.Enemies.Count}",
-                    "ARROWS PICK A TARGET",
-                    "ENTER ATTACKS  R RETREATS",
+                    $"Q MODE  E SPELL  {GetCombatSummary()}",
+                    "ARROWS PICK TARGET  ENTER ACTS",
                 ];
                 statusLine = encounterIsBoss ? "A dungeon lord blocks the way." : "Something stirs in the dark.";
                 uiMode = UiMode.Encounter;
@@ -1010,7 +1067,21 @@ public sealed class NotimaGame : Game
         party.Gold += gold;
         party.Food += food;
         SetDungeonTile(dungeonCell, '.');
-        statusLine = food > 0 ? $"You recover {gold} gold and {food} food." : $"You recover {gold} gold.";
+
+        var drops = new List<string>();
+        if (food > 0)
+        {
+            drops.Add($"{food} food");
+        }
+
+        if (TryAwardEquipmentDrop(out var itemDrop))
+        {
+            drops.Add(itemDrop);
+        }
+
+        statusLine = drops.Count > 0
+            ? $"You recover {gold} gold and {string.Join(", ", drops)}."
+            : $"You recover {gold} gold.";
     }
 
     private void SetDungeonTile(GridPoint point, char symbol)
@@ -1259,6 +1330,7 @@ public sealed class NotimaGame : Game
         DrawText(dungeon is null ? map.Name : $"DUNGEON LV {dungeon.Level}", new Vector2(HudX + 22, 88), new Color(124, 142, 174), 2);
 
         DrawText($"HP {party.TotalHealth}/{party.MaxTotalHealth}", new Vector2(HudX + 22, 138), party.TotalHealth > (party.MaxTotalHealth / 2) ? new Color(108, 156, 113) : new Color(170, 111, 111), 2);
+        DrawText($"MP {party.Mana}/{party.MaxMana}", new Vector2(HudX + 250, 138), new Color(112, 137, 179), 2);
         DrawText($"FOOD {party.Food}", new Vector2(HudX + 22, 168), new Color(171, 150, 99), 2);
         DrawText($"GOLD {party.Gold}", new Vector2(HudX + 22, 198), new Color(184, 151, 88), 2);
         DrawText($"LVL {party.Level}", new Vector2(HudX + 22, 228), new Color(123, 144, 173), 2);
@@ -1266,9 +1338,11 @@ public sealed class NotimaGame : Game
         DrawText($"ARM {party.ArmorTier}", new Vector2(HudX + 170, 258), new Color(133, 140, 160), 2);
         DrawText($"KEYS {party.Keys}", new Vector2(HudX + 314, 258), new Color(171, 150, 99), 2);
         DrawText($"STEPS {party.Steps}", new Vector2(HudX + 22, 288), new Color(133, 140, 160), 2);
+        DrawText(GetWeaponName(), new Vector2(HudX + 22, 314), new Color(158, 128, 104), 1);
+        DrawText(GetArmorName(), new Vector2(HudX + 220, 314), new Color(128, 136, 151), 1);
 
-        DrawText("TILE", new Vector2(HudX + 22, 330), new Color(178, 150, 96), 2);
-        DrawWrappedText(DescribeCurrentTile(), new Vector2(HudX + 22, 360), 2, HudWidth - 44, new Color(158, 169, 189));
+        DrawText("TILE", new Vector2(HudX + 22, 340), new Color(178, 150, 96), 2);
+        DrawWrappedText(DescribeCurrentTile(), new Vector2(HudX + 22, 370), 2, HudWidth - 44, new Color(158, 169, 189));
 
         DrawText("STATUS", new Vector2(HudX + 22, 450), new Color(178, 150, 96), 2);
         DrawWrappedText(statusLine, new Vector2(HudX + 22, 480), 2, HudWidth - 44, new Color(166, 170, 180));
@@ -1288,6 +1362,12 @@ public sealed class NotimaGame : Game
             return;
         }
 
+        if (uiMode == UiMode.Town && townMenu is not null)
+        {
+            DrawTownScene();
+            return;
+        }
+
         DrawPanel(PanelX, PanelY, PanelWidth, PanelHeight, new Color(15, 18, 29, 236));
         DrawFrame(new RectangleF(PanelX, PanelY, PanelWidth, PanelHeight), new Color(173, 145, 89), 2);
         DrawText(panelTitle, new Vector2(PanelX + 22, PanelY + 22), new Color(188, 164, 109), 3);
@@ -1303,6 +1383,50 @@ public sealed class NotimaGame : Game
             DrawWrappedText(line, new Vector2(PanelX + 22, lineY), 2, PanelWidth - 44, new Color(232, 238, 252));
             lineY += 32;
         }
+    }
+
+    private void DrawTownScene()
+    {
+        if (townMenu is null)
+        {
+            return;
+        }
+
+        var rect = new RectangleF(786, 246, 426, 290);
+        DrawPanel(rect.X, rect.Y, rect.Width, rect.Height, new Color(23, 21, 28, 242));
+        DrawFrame(rect, new Color(166, 140, 88), 2);
+        DrawText(townMenu.Title, new Vector2(rect.X + 24, rect.Y + 22), new Color(191, 167, 109), 3);
+        DrawWrappedText(townMenu.Description, new Vector2(rect.X + 24, rect.Y + 62), 2, 370, new Color(156, 165, 182));
+
+        var vignette = townMenu.Symbol switch
+        {
+            'T' => "INN  FORGE  MARKET",
+            'H' => "DOCK  ARMORER  WAREHOUSE",
+            'C' => "FIRE  PACKS  BEDROLLS",
+            'K' => "BARRACKS  YARD  CAPTAIN",
+            'S' => "ALTAR  CANDLES  SILENCE",
+            _ => "ARCHES  RUBBLE  SHADOWS",
+        };
+        DrawText(vignette, new Vector2(rect.X + 24, rect.Y + 110), new Color(126, 135, 150), 2);
+
+        var optionWidth = 122.0f;
+        var optionHeight = 56.0f;
+        var optionsPerRow = 3;
+        var startX = rect.X + 18.0f;
+        var startY = rect.Y + 154.0f;
+        for (var i = 0; i < townMenu.Options.Count; i++)
+        {
+            var column = i % optionsPerRow;
+            var row = i / optionsPerRow;
+            var box = new RectangleF(startX + (column * (optionWidth + 10.0f)), startY + (row * (optionHeight + 10.0f)), optionWidth, optionHeight);
+            var selected = i == townMenu.SelectedIndex;
+            DrawPanel(box.X, box.Y, box.Width, box.Height, selected ? new Color(78, 62, 45, 220) : new Color(36, 38, 46, 220));
+            DrawFrame(box, selected ? new Color(194, 160, 97) : new Color(89, 97, 112), 1);
+            DrawWrappedText(townMenu.Options[i], new Vector2(box.X + 8, box.Y + 10), 1, 106, selected ? new Color(235, 216, 178) : new Color(174, 179, 190));
+        }
+
+        DrawText("LEFT RIGHT SELECT", new Vector2(rect.X + 24, rect.Bottom - 40), new Color(126, 145, 172), 2);
+        DrawText("ENTER CONFIRMS  R LEAVES", new Vector2(rect.X + 24, rect.Bottom - 18), new Color(126, 145, 172), 2);
     }
 
     private void DrawPartyBanner(Vector2 origin)
@@ -1622,9 +1746,159 @@ public sealed class NotimaGame : Game
         enemyAttackAnimationTime = 0.0f;
     }
 
+    private bool TryCastSpell(List<string> roundEvents)
+    {
+        var manaCost = GetSpellCost(selectedSpell);
+        if (party.Mana < manaCost)
+        {
+            roundEvents.Add($"Not enough mana for {GetSpellName(selectedSpell)}");
+            return false;
+        }
+
+        party.Mana -= manaCost;
+
+        switch (selectedSpell)
+        {
+            case SpellKind.Ember:
+                var target = GetSelectedEnemy() ?? encounter?.Enemies.FirstOrDefault(enemy => enemy.IsAlive);
+                if (target is null)
+                {
+                    return false;
+                }
+
+                var emberDamage = 8 + party.Level + party.WeaponTier;
+                target.Health = Math.Max(0, target.Health - emberDamage);
+                roundEvents.Add($"AVA casts EMBER for {emberDamage}");
+                if (!target.IsAlive)
+                {
+                    selectedEnemyIndex = GetDefaultSelectedEnemy();
+                }
+
+                return true;
+            case SpellKind.Mend:
+                var allyIndex = GetLowestHealthPartyIndex();
+                if (allyIndex is null)
+                {
+                    return false;
+                }
+
+                var ally = party.Members[allyIndex.Value];
+                var heal = 6 + party.Level;
+                ally.Health = Math.Min(ally.MaxHealth, ally.Health + heal);
+                roundEvents.Add($"AVA casts MEND on {ally.Name} for {heal}");
+                return true;
+            default:
+                party.WardCharges = 2;
+                roundEvents.Add("AVA casts AEGIS");
+                return true;
+        }
+    }
+
+    private int GetSpellCost(SpellKind spell) => spell switch
+    {
+        SpellKind.Ember => 3,
+        SpellKind.Mend => 4,
+        _ => 5,
+    };
+
+    private string GetSpellName(SpellKind spell) => spell switch
+    {
+        SpellKind.Ember => "EMBER",
+        SpellKind.Mend => "MEND",
+        _ => "AEGIS",
+    };
+
+    private string GetCombatSummary()
+    {
+        return selectedCombatAction == CombatAction.Attack
+            ? "MODE ATTACK"
+            : $"MODE SPELL {GetSpellName(selectedSpell)} MP {party.Mana}/{party.MaxMana}";
+    }
+
+    private int? GetLowestHealthPartyIndex()
+    {
+        var bestRatio = float.MaxValue;
+        int? bestIndex = null;
+        for (var i = 0; i < party.Members.Count; i++)
+        {
+            var member = party.Members[i];
+            if (!member.IsAlive)
+            {
+                continue;
+            }
+
+            var ratio = (float)member.Health / member.MaxHealth;
+            if (ratio < bestRatio)
+            {
+                bestRatio = ratio;
+                bestIndex = i;
+            }
+        }
+
+        return bestIndex;
+    }
+
     private int GetWeaponUpgradeCost() => 18 + (party.WeaponTier * 12);
 
     private int GetArmorUpgradeCost() => 16 + (party.ArmorTier * 10);
+
+    private string GetWeaponName() => party.WeaponTier switch
+    {
+        0 => "RUSTED KNIFE",
+        1 => "IRON BLADE",
+        2 => "MERCENARY SWORD",
+        3 => "TEMPERED SABRE",
+        4 => "STARFORGED EDGE",
+        _ => "MYTHIC EDGE",
+    };
+
+    private string GetArmorName() => party.ArmorTier switch
+    {
+        0 => "PATCHED CLOTH",
+        1 => "LEATHER JACK",
+        2 => "RING MAIL",
+        3 => "LAMELLAR COAT",
+        4 => "BLACK PLATE",
+        _ => "WARDEN MAIL",
+    };
+
+    private string GetNextWeaponName() => party.WeaponTier switch
+    {
+        0 => "IRON BLADE",
+        1 => "MERCENARY SWORD",
+        2 => "TEMPERED SABRE",
+        3 => "STARFORGED EDGE",
+        _ => "MYTHIC EDGE",
+    };
+
+    private string GetNextArmorName() => party.ArmorTier switch
+    {
+        0 => "LEATHER JACK",
+        1 => "RING MAIL",
+        2 => "LAMELLAR COAT",
+        3 => "BLACK PLATE",
+        _ => "WARDEN MAIL",
+    };
+
+    private bool TryAwardEquipmentDrop(out string itemDrop)
+    {
+        itemDrop = string.Empty;
+        if (random.NextDouble() < 0.18 && party.WeaponTier < 4)
+        {
+            party.WeaponTier++;
+            itemDrop = GetWeaponName();
+            return true;
+        }
+
+        if (random.NextDouble() < 0.18 && party.ArmorTier < 4)
+        {
+            party.ArmorTier++;
+            itemDrop = GetArmorName();
+            return true;
+        }
+
+        return false;
+    }
 
     private string GetSavePath()
     {
@@ -1728,6 +2002,8 @@ public sealed class NotimaGame : Game
         {
             member.Health = member.MaxHealth;
         }
+
+        party.Mana = party.MaxMana;
     }
 
     private void RaisePartyMaxHealth(int amount)
@@ -1930,6 +2206,12 @@ internal sealed class PartyState
 
     public int Food { get; set; }
 
+    public int Mana { get; set; }
+
+    public int MaxMana { get; set; }
+
+    public int WardCharges { get; set; }
+
     public int WeaponTier { get; set; }
 
     public int ArmorTier { get; set; }
@@ -1952,6 +2234,8 @@ internal sealed class PartyState
             Members.Add(new PartyMember("BRI", new Color(97, 118, 142), memberHealth));
             Members.Add(new PartyMember("CYR", new Color(124, 92, 100), memberHealth));
             Members.Add(new PartyMember("DAS", new Color(129, 112, 76), memberHealth));
+            Mana = MaxMana;
+            WardCharges = 0;
             return;
         }
 
@@ -1960,6 +2244,9 @@ internal sealed class PartyState
             member.MaxHealth = memberHealth;
             member.Health = memberHealth;
         }
+
+        Mana = MaxMana;
+        WardCharges = 0;
     }
 }
 
@@ -2095,6 +2382,12 @@ internal sealed class PartySaveData
 
     public int Food { get; set; }
 
+    public int Mana { get; set; }
+
+    public int MaxMana { get; set; }
+
+    public int WardCharges { get; set; }
+
     public int WeaponTier { get; set; }
 
     public int ArmorTier { get; set; }
@@ -2112,6 +2405,9 @@ internal sealed class PartySaveData
             Level = party.Level,
             Gold = party.Gold,
             Food = party.Food,
+            Mana = party.Mana,
+            MaxMana = party.MaxMana,
+            WardCharges = party.WardCharges,
             WeaponTier = party.WeaponTier,
             ArmorTier = party.ArmorTier,
             Keys = party.Keys,
@@ -2135,6 +2431,9 @@ internal sealed class PartySaveData
             Level = Level,
             Gold = Gold,
             Food = Food,
+            Mana = Mana,
+            MaxMana = MaxMana,
+            WardCharges = WardCharges,
             WeaponTier = WeaponTier,
             ArmorTier = ArmorTier,
             Keys = Keys,
@@ -2347,6 +2646,19 @@ internal enum UiMode
     Dungeon,
     Encounter,
     Dialog,
+}
+
+internal enum CombatAction
+{
+    Attack,
+    Spell,
+}
+
+internal enum SpellKind
+{
+    Ember,
+    Mend,
+    Aegis,
 }
 
 internal enum Direction
