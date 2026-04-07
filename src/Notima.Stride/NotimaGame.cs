@@ -11,8 +11,14 @@ public sealed class NotimaGame : Game
 {
     private const float MoveRepeatDelay = 0.16f;
     private const int TilePixels = 24;
-    private const int MapOffsetX = 28;
-    private const int MapOffsetY = 28;
+    private const float IsoHalfWidth = 32.0f;
+    private const float IsoHalfHeight = 16.0f;
+    private const float IsoTileWidth = 64.0f;
+    private const float IsoTileHeight = 64.0f;
+    private const float IsoOriginX = 348.0f;
+    private const float IsoOriginY = 74.0f;
+    private const int IsoSheetPitch = 33;
+    private const int IsoSheetCell = 32;
     private const int HudX = 760;
     private const int HudWidth = 484;
     private const int PanelX = 812;
@@ -91,8 +97,8 @@ public sealed class NotimaGame : Game
 
         spriteBatch = new SpriteBatch(GraphicsDevice);
         whiteTexture = GraphicsDevice.GetSharedWhiteTexture();
-        tileTexture = LoadRgbaTexture("Content/Art/overworld-tiles-cc0.rgba", 96, 112);
-        playerTexture = LoadRgbaTexture("Content/Art/julia-player-cc0.rgba", 128, 128);
+        tileTexture = LoadRgbaTexture("Content/Art/isometric_tiles_dezrasdragons.rgba", 307, 298);
+        playerTexture = LoadRgbaTexture("Content/Art/isometric_hero_dezrasdragons.rgba", 959, 496);
         LoadMapFromDisk();
         UpdateWindowTitle();
     }
@@ -577,11 +583,8 @@ public sealed class NotimaGame : Game
 
     private void DrawMap()
     {
-        var mapWidthPixels = map.Width * TilePixels;
-        var mapHeightPixels = map.Height * TilePixels;
-
-        DrawPanel(MapOffsetX - 8, MapOffsetY - 8, mapWidthPixels + 16, mapHeightPixels + 16, new Color(38, 50, 74, 255));
-        DrawPanel(MapOffsetX - 3, MapOffsetY - 3, mapWidthPixels + 6, mapHeightPixels + 6, new Color(96, 118, 164, 255));
+        DrawPanel(28, 28, 692, 664, new Color(26, 35, 49, 240));
+        DrawFrame(new RectangleF(28, 28, 692, 664), new Color(102, 124, 171), 2);
 
         for (var y = 0; y < map.Rows.Count; y++)
         {
@@ -589,40 +592,26 @@ public sealed class NotimaGame : Game
             for (var x = 0; x < row.Length; x++)
             {
                 var symbol = row[x];
-                var tile = GetTileDefinition(symbol);
-                var destination = new RectangleF(
-                    MapOffsetX + (x * TilePixels),
-                    MapOffsetY + (y * TilePixels),
-                    TilePixels,
-                    TilePixels);
-
-                var tileSource = new RectangleF(tile.SourceRegion.X, tile.SourceRegion.Y, tile.SourceRegion.Width, tile.SourceRegion.Height);
-                spriteBatch.Draw(tileTexture, destination, tileSource, tile.Tint, 0, Vector2.Zero);
+                var destination = GetIsoTileDestination(x, y);
+                var tileSource = GetIsoTileSource(symbol);
+                spriteBatch.Draw(tileTexture, destination, tileSource, Color.White, 0, Vector2.Zero);
 
                 if (symbol is 'T' or 'K' or 'R' or 'S' or 'H' or 'C' or 'D')
                 {
-                    DrawLandmarkMarker(symbol, x, y);
+                    DrawLandmarkMarker(symbol, destination);
                 }
             }
         }
 
-        var cursorDestination = new RectangleF(
-            MapOffsetX + (playerCell.X * TilePixels),
-            MapOffsetY + (playerCell.Y * TilePixels),
-            TilePixels,
-            TilePixels);
-        spriteBatch.Draw(whiteTexture, cursorDestination, new Color(255, 244, 166, 48));
+        var cursorDestination = GetIsoHighlightDestination(playerCell.X, playerCell.Y);
+        spriteBatch.Draw(whiteTexture, cursorDestination, new Color(255, 244, 166, 34));
         DrawFrame(cursorDestination, new Color(255, 235, 119), 2);
 
         var playerFrame = GetPlayerSourceFrame();
-        var playerDestination = new RectangleF(
-            cursorDestination.X + 2.0f,
-            cursorDestination.Y + 1.0f,
-            TilePixels - 4.0f,
-            TilePixels - 2.0f);
+        var playerDestination = GetIsoCharacterDestination(playerCell.X, playerCell.Y, 0.0f);
 
         DrawPartyTrail(cursorDestination);
-        spriteBatch.Draw(whiteTexture, new RectangleF(playerDestination.X + 3.0f, playerDestination.Y + playerDestination.Height - 4.0f, playerDestination.Width - 6.0f, 3.0f), new Color(0, 0, 0, 82));
+        spriteBatch.Draw(whiteTexture, new RectangleF(playerDestination.X + 10.0f, playerDestination.Y + playerDestination.Height - 6.0f, playerDestination.Width - 20.0f, 4.0f), new Color(0, 0, 0, 82));
         var playerSource = new RectangleF(playerFrame.X, playerFrame.Y, playerFrame.Width, playerFrame.Height);
         spriteBatch.Draw(playerTexture, playerDestination, playerSource, Color.White, 0, Vector2.Zero);
     }
@@ -640,28 +629,28 @@ public sealed class NotimaGame : Game
 
         var spacing = facing switch
         {
-            Direction.Up => new Vector2(0.0f, 7.0f),
-            Direction.Down => new Vector2(0.0f, -7.0f),
-            Direction.Left => new Vector2(7.0f, 0.0f),
-            _ => new Vector2(-7.0f, 0.0f),
+            Direction.Up => new Vector2(IsoHalfWidth * 0.33f, IsoHalfHeight * 0.33f),
+            Direction.Down => new Vector2(-IsoHalfWidth * 0.33f, -IsoHalfHeight * 0.33f),
+            Direction.Left => new Vector2(IsoHalfWidth * 0.33f, -IsoHalfHeight * 0.33f),
+            _ => new Vector2(-IsoHalfWidth * 0.33f, IsoHalfHeight * 0.33f),
         };
 
         for (var i = 0; i < tints.Length; i++)
         {
-            var bob = MathF.Sin((totalTime * 4.0f) + (i * 0.85f)) * 1.2f;
+            var bob = MathF.Sin((totalTime * 4.0f) + (i * 0.85f)) * 2.0f;
             var offset = spacing * (i + 1);
             var destination = new RectangleF(
-                leaderTile.X + 2.0f + offset.X,
-                leaderTile.Y + 1.0f + offset.Y + bob,
-                TilePixels - 6.0f,
-                TilePixels - 4.0f);
+                leaderTile.Center.X - 22.0f + offset.X,
+                leaderTile.Y - 28.0f + offset.Y + bob,
+                44.0f,
+                44.0f);
 
-            spriteBatch.Draw(whiteTexture, new RectangleF(destination.X + 2.0f, destination.Y + destination.Height - 3.0f, destination.Width - 4.0f, 2.0f), new Color(0, 0, 0, 56));
+            spriteBatch.Draw(whiteTexture, new RectangleF(destination.X + 10.0f, destination.Y + destination.Height - 5.0f, destination.Width - 20.0f, 3.0f), new Color(0, 0, 0, 56));
             spriteBatch.Draw(playerTexture, destination, sourceRect, tints[i], 0, Vector2.Zero);
         }
     }
 
-    private void DrawLandmarkMarker(char symbol, int x, int y)
+    private void DrawLandmarkMarker(char symbol, RectangleF tileDestination)
     {
         var color = symbol switch
         {
@@ -675,10 +664,8 @@ public sealed class NotimaGame : Game
             _ => Color.White,
         };
 
-        var px = MapOffsetX + (x * TilePixels);
-        var py = MapOffsetY + (y * TilePixels);
-        DrawPanel(px + 15, py + 2, 7, 7, color);
-        DrawFrame(new RectangleF(px + 14, py + 1, 9, 9), new Color(35, 20, 20), 1);
+        DrawPanel(tileDestination.Center.X - 5.0f, tileDestination.Y + 20.0f, 10.0f, 10.0f, color);
+        DrawFrame(new RectangleF(tileDestination.Center.X - 6.0f, tileDestination.Y + 19.0f, 12.0f, 12.0f), new Color(35, 20, 20), 1);
     }
 
     private Rectangle GetPlayerSourceFrame()
@@ -703,7 +690,9 @@ public sealed class NotimaGame : Game
             _ => 2,
         };
 
-        return new Rectangle(column * 16, row * 16, 16, 16);
+        var x = column * IsoSheetPitch;
+        var y = row * IsoSheetPitch;
+        return new Rectangle(x, y, IsoSheetCell, IsoSheetCell);
     }
 
     private void DrawHud()
@@ -987,6 +976,39 @@ public sealed class NotimaGame : Game
             _ => "OVERWORLD"
         };
         Window.Title = $"notima | {modeText} | HP {party.Health}/{party.MaxHealth} | GOLD {party.Gold} | FOOD {party.Food}";
+    }
+
+    private static RectangleF GetIsoTileSource(char symbol)
+    {
+        return symbol switch
+        {
+            '~' => new RectangleF(0, 7 * IsoSheetPitch, IsoSheetCell, IsoSheetCell),
+            '^' => new RectangleF(0, 2 * IsoSheetPitch, IsoSheetCell, IsoSheetCell),
+            '*' => new RectangleF(0, 0, IsoSheetCell, IsoSheetCell),
+            'F' => new RectangleF(0, 4 * IsoSheetPitch, IsoSheetCell, IsoSheetCell),
+            '=' => new RectangleF(0, 6 * IsoSheetPitch, IsoSheetCell, IsoSheetCell),
+            'T' or 'K' or 'R' or 'S' or 'H' or 'C' or 'D' => new RectangleF(0, 3 * IsoSheetPitch, IsoSheetCell, IsoSheetCell),
+            _ => new RectangleF(0, 3 * IsoSheetPitch, IsoSheetCell, IsoSheetCell),
+        };
+    }
+
+    private static RectangleF GetIsoTileDestination(int x, int y)
+    {
+        var screenX = IsoOriginX + ((x - y) * IsoHalfWidth);
+        var screenY = IsoOriginY + ((x + y) * IsoHalfHeight);
+        return new RectangleF(screenX, screenY, IsoTileWidth, IsoTileHeight);
+    }
+
+    private static RectangleF GetIsoHighlightDestination(int x, int y)
+    {
+        var tile = GetIsoTileDestination(x, y);
+        return new RectangleF(tile.X + 8.0f, tile.Y + 16.0f, IsoTileWidth - 16.0f, IsoHalfHeight + 2.0f);
+    }
+
+    private static RectangleF GetIsoCharacterDestination(int x, int y, float bob)
+    {
+        var tile = GetIsoTileDestination(x, y);
+        return new RectangleF(tile.X + 14.0f, tile.Y - 2.0f + bob, 40.0f, 40.0f);
     }
 }
 

@@ -16,5 +16,9 @@
     <None Include="..\..\assets\public-domain\overworld-tiles-cc0.png" Link="Content\Art\overworld-tiles-cc0.png" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\public-domain\julia-player-cc0.rgba" Link="Content\Art\julia-player-cc0.rgba" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\public-domain\overworld-tiles-cc0.rgba" Link="Content\Art\overworld-tiles-cc0.rgba" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\public-domain\isometric_hero_dezrasdragons.png" Link="Content\Art\isometric_hero_dezrasdragons.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\public-domain\isometric_tiles_dezrasdragons.png" Link="Content\Art\isometric_tiles_dezrasdragons.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\public-domain\isometric_hero_dezrasdragons.rgba" Link="Content\Art\isometric_hero_dezrasdragons.rgba" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\public-domain\isometric_tiles_dezrasdragons.rgba" Link="Content\Art\isometric_tiles_dezrasdragons.rgba" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

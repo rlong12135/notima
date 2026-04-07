@@ -5,7 +5,7 @@
 Current prototype features:
 
 - keyboard movement on a world grid
-- sprite-based overworld rendering using sourced public-domain art
+- 2.5D isometric overworld rendering using sourced CC0 isometric art
 - sample overworld loaded from JSON
 - walkable and blocked terrain
 - party stats: health, food, gold, level, steps
@@ -31,7 +31,8 @@ dotnet run --project /home/rlong/notima/src/Notima.Stride.Linux/Notima.Stride.Li
 
 Source notes:
 
-- Public-domain player sprite reference: `assets/public-domain/julia-player-cc0.png`
-- Public-domain overworld tiles reference: `assets/public-domain/overworld-tiles-cc0.png`
+- Public-domain isometric hero sprite reference: `assets/public-domain/isometric_hero_dezrasdragons.png`
+- Public-domain isometric tile reference: `assets/public-domain/isometric_tiles_dezrasdragons.png`
+- Public-domain fallback/topdown references remain in `assets/public-domain/`
 - Linux runtime uses derived raw RGBA mirrors next to those PNGs to avoid the current Stride/Linux image-loader limitation
 - Public-domain map-data source notes: `docs/sources.md`
