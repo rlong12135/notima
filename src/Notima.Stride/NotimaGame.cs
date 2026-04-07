@@ -2298,14 +2298,16 @@ public sealed class NotimaGame : Game
 
     private void DrawDungeonPortraitStrip(RectangleF view)
     {
+        var top = view.Y + 472.0f;
         for (var i = 0; i < party.Members.Count; i++)
         {
-            var card = new RectangleF(view.X + 206 + (i * 112), view.Bottom - 122, 96, 96);
-            var source = new RectangleF(i * 128, 0, 128, 128);
+            var card = new RectangleF(view.X + 206 + (i * 112), top, 96, 96);
+            var source = new RectangleF(i * 128, 0, 90, 90);
             DrawPanel(card.X, card.Y, card.Width, card.Height, new Color(16, 18, 22, 220));
             DrawFrame(card, new Color(92, 86, 74), 2);
-            spriteBatch.Draw(grimPortraitTexture, UiRect(new RectangleF(card.X + 6, card.Y + 6, 84, 84)), source, Color.White, 0, Vector2.Zero);
-            DrawText($"{party.Members[i].Name}", new Vector2(card.X + 8, card.Bottom - 18), party.Members[i].IsAlive ? new Color(228, 228, 236) : new Color(122, 122, 132), 1);
+            spriteBatch.Draw(grimPortraitTexture, UiRect(new RectangleF(card.X + 3, card.Y - 3, 90, 90)), source, Color.White, 0, Vector2.Zero);
+            DrawPanel(card.X + 3, card.Bottom - 17, 90, 12, new Color(8, 10, 14, 200));
+            DrawText($"{party.Members[i].Name}", new Vector2(card.X + 6, card.Bottom - 16), party.Members[i].IsAlive ? new Color(228, 228, 236) : new Color(122, 122, 132), 1);
         }
     }
 
