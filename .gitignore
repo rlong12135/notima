@@ -1,0 +1,14 @@
+bin/
+obj/
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.cache
+*.log
+*.tmp
+*.pidb
+*.DS_Store
+assets/tmp/
+

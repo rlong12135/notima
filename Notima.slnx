@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Notima.Stride.Linux/Notima.Stride.Linux.csproj" />
+    <Project Path="src/Notima.Stride/Notima.Stride.csproj" />
+  </Folder>
+</Solution>
