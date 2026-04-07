@@ -9,6 +9,8 @@ namespace Notima.Stride;
 
 public sealed class NotimaGame : Game
 {
+    private const float BaseWidth = 1280.0f;
+    private const float BaseHeight = 720.0f;
     private const float MoveRepeatDelay = 0.16f;
     private const int TilePixels = 24;
     private const float IsoHalfWidth = 32.0f;
@@ -25,6 +27,7 @@ public sealed class NotimaGame : Game
     private const int PanelY = 308;
     private const int PanelWidth = 388;
     private const int PanelHeight = 230;
+    private const int EncounterPanelHeight = 372;
 
     private readonly Dictionary<char, TileDefinition> tileDefinitions = new()
     {
@@ -62,6 +65,7 @@ public sealed class NotimaGame : Game
     private Texture playerTexture = null!;
     private Texture tileTexture = null!;
     private Texture enemyTexture = null!;
+    private SimpleAudioPlayer? audioPlayer;
     private OverworldMap map = null!;
     private GridPoint playerCell;
     private DungeonState? dungeon;
@@ -87,6 +91,11 @@ public sealed class NotimaGame : Game
     private bool encounterIsBoss;
     private CombatAction selectedCombatAction = CombatAction.Attack;
     private SpellKind selectedSpell = SpellKind.Ember;
+    private List<CombatTurnEntry> encounterTurnOrder = [];
+    private int encounterTurnCursor;
+    private float uiScale = 1.0f;
+    private float layoutOffsetX;
+    private float layoutOffsetY;
 
     public NotimaGame()
     {
@@ -123,6 +132,7 @@ public sealed class NotimaGame : Game
         tileTexture = LoadRgbaTexture("Content/Art/notima_isometric_tiles.rgba", 32, 495);
         playerTexture = LoadRgbaTexture("Content/Art/notima_isometric_hero.rgba", 99, 528);
         enemyTexture = LoadRgbaTexture("Content/Art/notima_enemy_sheet.rgba", 50, 75);
+        audioPlayer = new SimpleAudioPlayer();
         LoadMapFromDisk();
         UpdateWindowTitle();
     }
@@ -132,6 +142,7 @@ public sealed class NotimaGame : Game
         base.Update(gameTime);
 
         var dt = (float)gameTime.Elapsed.TotalSeconds;
+        UpdateLayout();
         totalTime += dt;
         moveCooldown = MathF.Max(0.0f, moveCooldown - dt);
         playerAttackAnimationTime = MathF.Max(0.0f, playerAttackAnimationTime - dt);
@@ -158,6 +169,7 @@ public sealed class NotimaGame : Game
         tileTexture?.Dispose();
         playerTexture?.Dispose();
         enemyTexture?.Dispose();
+        audioPlayer?.Dispose();
         spriteBatch?.Dispose();
         base.Destroy();
     }
@@ -248,15 +260,29 @@ public sealed class NotimaGame : Game
 
     private void HandleEncounterInput()
     {
+        var partyTurn = encounterTurnOrder.Count == 0
+            || encounterTurnOrder[Math.Clamp(encounterTurnCursor, 0, Math.Max(0, encounterTurnOrder.Count - 1))].IsParty;
+
         if (Input.IsKeyPressed(Keys.Q))
         {
+            if (!partyTurn)
+            {
+                statusLine = "The enemy is acting.";
+                return;
+            }
             selectedCombatAction = selectedCombatAction == CombatAction.Attack ? CombatAction.Spell : CombatAction.Attack;
             statusLine = selectedCombatAction == CombatAction.Attack ? "Action set to attack." : $"Action set to spell: {GetSpellName(selectedSpell)}.";
+            RefreshEncounterPanel();
             return;
         }
 
         if (Input.IsKeyPressed(Keys.E) && selectedCombatAction == CombatAction.Spell)
         {
+            if (!partyTurn)
+            {
+                statusLine = "The enemy is acting.";
+                return;
+            }
             selectedSpell = selectedSpell switch
             {
                 SpellKind.Ember => SpellKind.Mend,
@@ -264,17 +290,28 @@ public sealed class NotimaGame : Game
                 _ => SpellKind.Ember,
             };
             statusLine = $"Spell set to {GetSpellName(selectedSpell)}.";
+            RefreshEncounterPanel();
             return;
         }
 
         if (Input.IsKeyPressed(Keys.Left) || Input.IsKeyPressed(Keys.A))
         {
+            if (!partyTurn)
+            {
+                statusLine = "Wait for your next turn.";
+                return;
+            }
             CycleEnemyTarget(-1);
             return;
         }
 
         if (Input.IsKeyPressed(Keys.Right) || Input.IsKeyPressed(Keys.D) || Input.IsKeyPressed(Keys.Up) || Input.IsKeyPressed(Keys.W) || Input.IsKeyPressed(Keys.Down) || Input.IsKeyPressed(Keys.S))
         {
+            if (!partyTurn)
+            {
+                statusLine = "Wait for your next turn.";
+                return;
+            }
             CycleEnemyTarget(1);
             return;
         }
@@ -473,6 +510,12 @@ public sealed class NotimaGame : Game
 
         dungeonCell = target;
         walkFrame = (walkFrame + 1) % 3;
+        audioPlayer?.PlayStep();
+        HandleTravelStep();
+        if (AdvanceDungeonThreats())
+        {
+            return;
+        }
         statusLine = DescribeCurrentTile();
         ResolveDungeonStep(symbol);
     }
@@ -495,18 +538,27 @@ public sealed class NotimaGame : Game
 
         playerCell = target;
         walkFrame = (walkFrame + 1) % 3;
-        party.Steps++;
-        if (party.Steps % 5 == 0)
-        {
-            party.Food = Math.Max(0, party.Food - 1);
-            if (party.Food == 0)
-            {
-                DamageRandomAlivePartyMember(1, allowDefeat: false);
-            }
-        }
-
+        audioPlayer?.PlayStep();
+        HandleTravelStep();
         statusLine = DescribeCurrentTile();
         MaybeTriggerEncounter(tile);
+    }
+
+    private void HandleTravelStep()
+    {
+        party.Steps++;
+        if (party.Steps % 5 != 0)
+        {
+            return;
+        }
+
+        party.Food = Math.Max(0, party.Food - 1);
+        if (party.Food == 0)
+        {
+            DamageRandomAlivePartyMember(1, allowDefeat: false);
+        }
+
+        RegeneratePartyOneHitPoint();
     }
 
     private void MaybeTriggerEncounter(TileDefinition tile)
@@ -537,10 +589,12 @@ public sealed class NotimaGame : Game
         [
             $"A {encounter.Name} RUSHES IN.",
             $"FOES {encounter.AliveCount}/{encounter.Enemies.Count}",
-            $"Q MODE  E SPELL  {GetCombatSummary()}",
-            "ARROWS PICK TARGET  ENTER ACTS",
+            GetTurnBanner(),
+            GetCombatPrompt(),
         ];
         statusLine = $"Encounter! {encounter.Name} blocks the road.";
+        audioPlayer?.PlayClash();
+        ResetEncounterTurnState();
         uiMode = UiMode.Encounter;
     }
 
@@ -552,48 +606,35 @@ public sealed class NotimaGame : Game
             return;
         }
 
-        var target = GetSelectedEnemy();
-        if (target is null)
+        if (encounter.AliveCount == 0)
         {
             HandleEncounterVictory();
             return;
         }
 
+        NormalizeEncounterTurnCursor();
+        if (encounterTurnOrder.Count == 0)
+        {
+            HandleEncounterVictory();
+            return;
+        }
+
+        var currentTurn = encounterTurnOrder[encounterTurnCursor];
         var roundEvents = new List<string>();
 
-        for (var partyIndex = 0; partyIndex < party.Members.Count; partyIndex++)
+        if (currentTurn.IsParty)
         {
-            if (!party.Members[partyIndex].IsAlive || encounter.AliveCount == 0)
-            {
-                continue;
-            }
+            ResolvePartyTurn(currentTurn.Index, roundEvents);
+        }
+        else
+        {
+            ResolveEnemyTurn(currentTurn.Index, roundEvents);
+        }
 
-            attackingPartyMemberIndex = partyIndex;
-            playerAttackAnimationTime = 0.24f;
-
-            if (partyIndex == 0 && selectedCombatAction == CombatAction.Spell && TryCastSpell(roundEvents))
-            {
-                continue;
-            }
-
-            var actingTarget = GetSelectedEnemy() ?? encounter.Enemies.FirstOrDefault(enemyUnit => enemyUnit.IsAlive);
-            if (actingTarget is null)
-            {
-                break;
-            }
-
-            var playerDamage = random.Next(4, 9) + party.Level + (party.WeaponTier * 2);
-            if (partyIndex >= 2)
-            {
-                playerDamage = Math.Max(2, playerDamage - 2);
-            }
-
-            actingTarget.Health = Math.Max(0, actingTarget.Health - playerDamage);
-            roundEvents.Add($"{party.Members[partyIndex].Name} hits {actingTarget.Name} for {playerDamage}");
-            if (!actingTarget.IsAlive)
-            {
-                selectedEnemyIndex = GetDefaultSelectedEnemy();
-            }
+        if (party.TotalHealth <= 0)
+        {
+            HandleDefeat();
+            return;
         }
 
         if (encounter.AliveCount == 0)
@@ -602,46 +643,9 @@ public sealed class NotimaGame : Game
             return;
         }
 
-        var wardReduction = party.WardCharges;
-        party.WardCharges = 0;
-
-        foreach (var enemy in encounter.Enemies.Where(enemyUnit => enemyUnit.IsAlive).ToList())
-        {
-            var enemyIndex = encounter.Enemies.IndexOf(enemy);
-            attackingEnemyIndex = enemyIndex;
-            enemyAttackAnimationTime = 0.24f;
-
-            var targetPartyIndex = GetRandomAlivePartyIndex(preferFront: true) ?? 0;
-            attackedPartyMemberIndex = targetPartyIndex;
-
-            var enemyDamageBase = random.Next(enemy.AttackMin, enemy.AttackMax + 1);
-            var enemyDamage = Math.Max(1, enemyDamageBase - (party.Level / 2) - party.ArmorTier - wardReduction);
-            if (targetPartyIndex >= 2 && GetFrontAlivePartyIndex() is not null)
-            {
-                enemyDamage = Math.Max(1, enemyDamage - 2);
-            }
-
-            DamagePartyMember(targetPartyIndex, enemyDamage);
-            roundEvents.Add($"{enemy.Name} hits {party.Members[targetPartyIndex].Name} for {enemyDamage}");
-            if (party.TotalHealth <= 0)
-            {
-                break;
-            }
-        }
-
         statusLine = string.Join(". ", roundEvents.Take(3)) + (roundEvents.Count > 3 ? "..." : string.Empty);
-        panelLines =
-        [
-            $"{target.Name} HP {target.Health}/{target.MaxHealth}",
-            $"PARTY HP {party.TotalHealth}/{party.MaxTotalHealth}",
-            $"Q MODE  E SPELL  {GetCombatSummary()}",
-            "ARROWS PICK TARGET  ENTER ACTS",
-        ];
-
-        if (party.TotalHealth <= 0)
-        {
-            HandleDefeat();
-        }
+        AdvanceEncounterTurn(currentTurn);
+        RefreshEncounterPanel();
     }
 
     private void AttemptRetreat()
@@ -669,19 +673,108 @@ public sealed class NotimaGame : Game
         attackingEnemyIndex = enemy is null ? -1 : encounter.Enemies.IndexOf(enemy);
         attackedPartyMemberIndex = targetPartyIndex;
         enemyAttackAnimationTime = 0.24f;
+        audioPlayer?.PlayClash();
         statusLine = $"Retreat failed. The {encounter.Name} hits for {damage}.";
         panelLines =
         [
             $"A {encounter.Name} HOLDS YOU FAST.",
             $"PARTY HP {party.TotalHealth}/{party.MaxTotalHealth}",
-            $"Q MODE  E SPELL  {GetCombatSummary()}",
-            "ARROWS PICK TARGET  ENTER ACTS",
+            GetTurnBanner(),
+            GetCombatPrompt(),
         ];
 
         if (party.TotalHealth <= 0)
         {
             HandleDefeat();
         }
+    }
+
+    private void ResolvePartyTurn(int partyIndex, List<string> roundEvents)
+    {
+        if (partyIndex < 0 || partyIndex >= party.Members.Count || !party.Members[partyIndex].IsAlive)
+        {
+            roundEvents.Add("Turn lost.");
+            return;
+        }
+
+        attackingPartyMemberIndex = partyIndex;
+        playerAttackAnimationTime = 0.24f;
+
+        if (partyIndex == 0 && selectedCombatAction == CombatAction.Spell && TryCastSpell(roundEvents))
+        {
+            return;
+        }
+
+        var actingTarget = GetSelectedEnemy() ?? encounter?.Enemies.FirstOrDefault(enemyUnit => enemyUnit.IsAlive);
+        if (actingTarget is null)
+        {
+            return;
+        }
+
+        if (random.NextDouble() < 0.14)
+        {
+            roundEvents.Add($"{party.Members[partyIndex].Name} misses {actingTarget.Name}");
+            audioPlayer?.PlaySwish();
+            return;
+        }
+
+        var playerDamage = random.Next(4, 9) + party.Level + (party.WeaponTier * 2);
+        if (partyIndex >= 2)
+        {
+            playerDamage = Math.Max(2, playerDamage - 2);
+        }
+
+        actingTarget.Health = Math.Max(0, actingTarget.Health - playerDamage);
+        roundEvents.Add($"{party.Members[partyIndex].Name} hits {actingTarget.Name} for {playerDamage}");
+        audioPlayer?.PlayClash();
+        if (!actingTarget.IsAlive)
+        {
+            selectedEnemyIndex = GetDefaultSelectedEnemy();
+        }
+    }
+
+    private void ResolveEnemyTurn(int enemyIndex, List<string> roundEvents)
+    {
+        if (encounter is null || enemyIndex < 0 || enemyIndex >= encounter.Enemies.Count)
+        {
+            roundEvents.Add("Enemy loses its turn.");
+            return;
+        }
+
+        var enemy = encounter.Enemies[enemyIndex];
+        if (!enemy.IsAlive)
+        {
+            roundEvents.Add($"{enemy.Name} can no longer act.");
+            return;
+        }
+
+        attackingEnemyIndex = enemyIndex;
+        enemyAttackAnimationTime = 0.24f;
+
+        var targetPartyIndex = GetRandomAlivePartyIndex(preferFront: true) ?? 0;
+        attackedPartyMemberIndex = targetPartyIndex;
+
+        var wardReduction = party.WardCharges > 0 ? 2 : 0;
+        if (party.WardCharges > 0)
+        {
+            party.WardCharges--;
+        }
+        if (random.NextDouble() < 0.16)
+        {
+            roundEvents.Add($"{enemy.Name} misses {party.Members[targetPartyIndex].Name}");
+            audioPlayer?.PlaySwish();
+            return;
+        }
+        var enemyDamageBase = random.Next(enemy.AttackMin, enemy.AttackMax + 1);
+        var enemyDamage = Math.Max(1, enemyDamageBase - (party.Level / 2) - party.ArmorTier - wardReduction);
+        if (targetPartyIndex >= 2 && GetFrontAlivePartyIndex() is not null)
+        {
+            enemyDamage = Math.Max(1, enemyDamage - 2);
+        }
+
+        DamagePartyMember(targetPartyIndex, enemyDamage);
+        roundEvents.Add($"{enemy.Name} hits {party.Members[targetPartyIndex].Name} for {enemyDamage}");
+        audioPlayer?.PlayClash();
     }
 
     private void HandleDefeat()
@@ -740,6 +833,7 @@ public sealed class NotimaGame : Game
     {
         townMenu = TownMenuState.Create(symbol);
         uiMode = UiMode.Town;
+        audioPlayer?.PlayBell();
         RefreshTownPanel();
     }
 
@@ -963,7 +1057,7 @@ public sealed class NotimaGame : Game
         dungeon = GenerateDungeonLevel(1);
         dungeonCell = dungeon.Start;
         uiMode = UiMode.Dungeon;
-        statusLine = "You descend into cold stone and torch smoke.";
+        statusLine = "You descend into cold stone and torch smoke. RETURN TO < AND PRESS ENTER TO LEAVE.";
     }
 
     private void InteractWithDungeonTile()
@@ -1009,25 +1103,8 @@ public sealed class NotimaGame : Game
         {
             case 'M':
             case 'B':
-                encounter = symbol == 'B' ? EncounterState.CreateDungeonBoss(dungeon?.Level ?? 1) : EncounterState.CreateDungeonPack(dungeon?.Level ?? 1);
-                encounterFromDungeon = true;
-                encounterIsBoss = symbol == 'B';
-                selectedEnemyIndex = GetDefaultSelectedEnemy();
-                attackingEnemyIndex = -1;
-                attackedPartyMemberIndex = -1;
-                playerAttackAnimationTime = 0.0f;
-                enemyAttackAnimationTime = 0.0f;
                 SetDungeonTile(dungeonCell, '.');
-                panelTitle = encounterIsBoss ? "BOSS" : "ENCOUNTER";
-                panelLines =
-                [
-                    encounterIsBoss ? "A DREAD LORD EMERGES." : $"A {encounter.Name} RUSHES FROM THE DARK.",
-                    $"FOES {encounter.AliveCount}/{encounter.Enemies.Count}",
-                    $"Q MODE  E SPELL  {GetCombatSummary()}",
-                    "ARROWS PICK TARGET  ENTER ACTS",
-                ];
-                statusLine = encounterIsBoss ? "A dungeon lord blocks the way." : "Something stirs in the dark.";
-                uiMode = UiMode.Encounter;
+                StartDungeonEncounter(symbol == 'B');
                 break;
             case 'G':
                 statusLine = "A chest lies here. Press Enter to open it.";
@@ -1118,6 +1195,54 @@ public sealed class NotimaGame : Game
             Start = new GridPoint(1, size - 2)
         };
 
+        // Carve a few broad chambers and connector passages so the dungeon has shape.
+        for (var y = 2; y <= 4; y++)
+        {
+            for (var x = 2; x <= 4; x++)
+            {
+                state.SetTile(new GridPoint(x, y), '.');
+            }
+        }
+
+        for (var y = 7; y <= 9; y++)
+        {
+            for (var x = 1; x <= 4; x++)
+            {
+                state.SetTile(new GridPoint(x, y), '.');
+            }
+        }
+
+        for (var y = 2; y <= 4; y++)
+        {
+            for (var x = 7; x <= 9; x++)
+            {
+                state.SetTile(new GridPoint(x, y), '.');
+            }
+        }
+
+        for (var y = 1; y < size - 1; y++)
+        {
+            state.SetTile(new GridPoint(5, y), '.');
+        }
+
+        for (var x = 1; x < size - 1; x++)
+        {
+            state.SetTile(new GridPoint(x, 6), '.');
+        }
+
+        // Reintroduce some masonry so the space reads like a dungeon rather than an open box.
+        foreach (var point in new[]
+        {
+            new GridPoint(3, 5),
+            new GridPoint(7, 5),
+            new GridPoint(8, 6),
+            new GridPoint(2, 8),
+            new GridPoint(8, 8),
+        })
+        {
+            state.SetTile(point, '#');
+        }
+
         state.SetTile(state.Start, '<');
         var stairsPoint = new GridPoint(size - 2, 1);
         state.ExitPoint = stairsPoint;
@@ -1162,6 +1287,120 @@ public sealed class NotimaGame : Game
         }
 
         return state;
+    }
+
+    private bool AdvanceDungeonThreats()
+    {
+        if (dungeon is null)
+        {
+            return false;
+        }
+
+        var threats = new List<(GridPoint point, char symbol)>();
+        for (var y = 0; y < dungeon.Rows.Count; y++)
+        {
+            for (var x = 0; x < dungeon.Rows[y].Length; x++)
+            {
+                var symbol = dungeon.Rows[y][x];
+                if (symbol is 'M' or 'B')
+                {
+                    threats.Add((new GridPoint(x, y), symbol));
+                }
+            }
+        }
+
+        foreach (var threat in threats)
+        {
+            if (random.NextDouble() > 0.5)
+            {
+                continue;
+            }
+
+            var next = GetThreatStep(threat.point, dungeonCell);
+            if (next == threat.point)
+            {
+                continue;
+            }
+
+            if (next == dungeonCell)
+            {
+                SetDungeonTile(threat.point, '.');
+                StartDungeonEncounter(threat.symbol == 'B');
+                statusLine = threat.symbol == 'B' ? "The dungeon lord closes in." : "A lurking threat rushes you.";
+                return true;
+            }
+
+            if (dungeon.GetTile(next) != '.')
+            {
+                continue;
+            }
+
+            SetDungeonTile(threat.point, '.');
+            SetDungeonTile(next, threat.symbol);
+        }
+
+        return false;
+    }
+
+    private GridPoint GetThreatStep(GridPoint from, GridPoint toward)
+    {
+        if (dungeon is null)
+        {
+            return from;
+        }
+
+        var dx = toward.X - from.X;
+        var dy = toward.Y - from.Y;
+        var primary = Math.Abs(dx) >= Math.Abs(dy)
+            ? new GridPoint(Math.Sign(dx), 0)
+            : new GridPoint(0, Math.Sign(dy));
+        var secondary = primary.X == 0
+            ? new GridPoint(Math.Sign(dx), 0)
+            : new GridPoint(0, Math.Sign(dy));
+
+        foreach (var delta in new[] { primary, secondary })
+        {
+            if (delta == GridPoint.Zero)
+            {
+                continue;
+            }
+
+            var candidate = new GridPoint(from.X + delta.X, from.Y + delta.Y);
+            if (candidate == dungeonCell)
+            {
+                return candidate;
+            }
+
+            if (candidate.X < 0 || candidate.Y < 0 || candidate.X >= dungeon.Width || candidate.Y >= dungeon.Height)
+            {
+                continue;
+            }
+
+            if (dungeon.GetTile(candidate) == '.')
+            {
+                return candidate;
+            }
+        }
+
+        return from;
+    }
+
+    private void StartDungeonEncounter(bool boss)
+    {
+        encounter = boss ? EncounterState.CreateDungeonBoss(dungeon?.Level ?? 1) : EncounterState.CreateDungeonPack(dungeon?.Level ?? 1);
+        encounterFromDungeon = true;
+        encounterIsBoss = boss;
+        selectedEnemyIndex = GetDefaultSelectedEnemy();
+        attackingEnemyIndex = -1;
+        attackedPartyMemberIndex = -1;
+        playerAttackAnimationTime = 0.0f;
+        enemyAttackAnimationTime = 0.0f;
+        panelTitle = boss ? "BOSS" : "ENCOUNTER";
+        statusLine = boss ? "A dungeon lord blocks the way." : "Something stirs in the dark.";
+        audioPlayer?.PlayClash();
+        ResetEncounterTurnState();
+        RefreshEncounterPanel();
+        uiMode = UiMode.Encounter;
     }
 
     private void PlaceDungeonFeature(DungeonState state, char symbol, int minYInclusive = 1, int? maxYExclusive = null)
@@ -1241,22 +1480,142 @@ public sealed class NotimaGame : Game
                 var symbol = row[x];
                 var destination = GetIsoTileDestination(x, y);
                 var tileSource = GetIsoTileSource(symbol);
-                spriteBatch.Draw(tileTexture, destination, tileSource, Color.White, 0, Vector2.Zero);
+                spriteBatch.Draw(tileTexture, UiRect(destination), tileSource, Color.White, 0, Vector2.Zero);
+                if (dungeon is not null)
+                {
+                    DrawDungeonStoneFill(symbol, destination);
+                    DrawDungeonFeatureMarker(symbol, destination);
+                }
 
             }
         }
 
         var cursorDestination = GetIsoHighlightDestination(currentCell.X, currentCell.Y);
-        spriteBatch.Draw(whiteTexture, cursorDestination, new Color(156, 138, 78, 26));
+        spriteBatch.Draw(whiteTexture, UiRect(cursorDestination), new Color(156, 138, 78, 26));
         DrawFrame(cursorDestination, new Color(170, 148, 84), 2);
 
         var playerFrame = GetPlayerSourceFrame(0);
         var playerDestination = GetIsoCharacterDestination(currentCell.X, currentCell.Y, 0.0f);
 
         DrawPartyTrail(cursorDestination);
-        spriteBatch.Draw(whiteTexture, new RectangleF(playerDestination.X + 10.0f, playerDestination.Y + playerDestination.Height - 6.0f, playerDestination.Width - 20.0f, 4.0f), new Color(0, 0, 0, 82));
+        spriteBatch.Draw(whiteTexture, UiRect(new RectangleF(playerDestination.X + 10.0f, playerDestination.Y + playerDestination.Height - 6.0f, playerDestination.Width - 20.0f, 4.0f)), new Color(0, 0, 0, 82));
         var playerSource = new RectangleF(playerFrame.X, playerFrame.Y, playerFrame.Width, playerFrame.Height);
-        spriteBatch.Draw(playerTexture, playerDestination, playerSource, Color.White, 0, Vector2.Zero);
+        spriteBatch.Draw(playerTexture, UiRect(playerDestination), playerSource, Color.White, 0, Vector2.Zero);
+    }
+
+    private void DrawDungeonStoneFill(char symbol, RectangleF tileDestination)
+    {
+        if (GetTileDefinition(symbol).Walkable)
+        {
+            return;
+        }
+
+        var stones = new (float x, float y, float w, float h, Color color)[]
+        {
+            (14, 13, 11, 7, new Color(76, 72, 68, 244)),
+            (26, 18, 14, 9, new Color(58, 54, 50, 246)),
+            (38, 14, 10, 8, new Color(88, 82, 78, 244)),
+            (21, 28, 12, 8, new Color(48, 46, 44, 248)),
+            (35, 30, 15, 9, new Color(68, 64, 60, 246)),
+        };
+
+        foreach (var stone in stones)
+        {
+            DrawPanel(tileDestination.X + stone.x, tileDestination.Y + stone.y, stone.w, stone.h, stone.color);
+        }
+    }
+
+    private void DrawDungeonFeatureMarker(char symbol, RectangleF tileDestination)
+    {
+        if (symbol is not ('<' or '>' or 'G' or 'L' or 'k' or 'x' or 'M' or 'B'))
+        {
+            return;
+        }
+
+        var color = symbol switch
+        {
+            '<' => new Color(210, 198, 138),
+            '>' => new Color(186, 172, 132),
+            'G' => new Color(203, 171, 92),
+            'L' => new Color(128, 170, 188),
+            'k' => new Color(194, 168, 104),
+            'x' => new Color(151, 116, 92),
+            'B' => new Color(176, 86, 86),
+            _ => new Color(188, 122, 102),
+        };
+
+        var phase = totalTime * 3.2f + (tileDestination.X * 0.01f) + (tileDestination.Y * 0.02f);
+        var glow = 0.72f + (0.28f * (0.5f + (0.5f * MathF.Sin(phase))));
+        var bob = MathF.Sin(phase) * 1.6f;
+        var centerX = tileDestination.X + 32.0f;
+        var centerY = tileDestination.Y + 24.0f + bob;
+        var halo = new Color(
+            (byte)Math.Clamp(color.R + 36, 0, 255),
+            (byte)Math.Clamp(color.G + 36, 0, 255),
+            (byte)Math.Clamp(color.B + 36, 0, 255),
+            (byte)(52 + (56 * glow)));
+
+        DrawPanel(centerX - 8.0f, centerY - 8.0f, 16.0f, 16.0f, halo);
+
+        switch (symbol)
+        {
+            case '<':
+                DrawPanel(centerX - 1.0f, centerY - 8.0f, 2.0f, 12.0f, color);
+                DrawPanel(centerX - 6.0f, centerY - 4.0f, 12.0f, 2.0f, color);
+                DrawPanel(centerX - 5.0f, centerY - 8.0f, 2.0f, 3.0f, color);
+                DrawPanel(centerX + 3.0f, centerY - 8.0f, 2.0f, 3.0f, color);
+                DrawPanel(centerX - 7.0f, centerY + 5.0f, 14.0f, 2.0f, new Color(104, 92, 58));
+                break;
+            case '>':
+                DrawPanel(centerX - 1.0f, centerY - 6.0f, 2.0f, 12.0f, color);
+                DrawPanel(centerX - 6.0f, centerY + 2.0f, 12.0f, 2.0f, color);
+                DrawPanel(centerX - 5.0f, centerY + 6.0f, 2.0f, 3.0f, color);
+                DrawPanel(centerX + 3.0f, centerY + 6.0f, 2.0f, 3.0f, color);
+                DrawPanel(centerX - 7.0f, centerY - 9.0f, 14.0f, 2.0f, new Color(96, 84, 54));
+                break;
+            case 'G':
+                DrawPanel(centerX - 7.0f, centerY - 1.0f, 14.0f, 7.0f, color);
+                DrawFrame(new RectangleF(centerX - 7.0f, centerY - 1.0f, 14.0f, 7.0f), new Color(82, 58, 24), 1);
+                DrawPanel(centerX - 6.0f, centerY - 6.0f, 12.0f, 5.0f, new Color(153, 116, 52));
+                DrawPanel(centerX - 1.0f, centerY - 1.0f, 2.0f, 7.0f, new Color(234, 212, 124));
+                break;
+            case 'L':
+                DrawPanel(centerX - 6.0f, centerY - 3.0f, 12.0f, 8.0f, new Color(86, 116, 132));
+                DrawPanel(centerX - 4.0f, centerY - 5.0f, 8.0f, 12.0f, color);
+                DrawPanel(centerX - 3.0f, centerY - 2.0f, 6.0f, 6.0f, new Color(220, 238, 246));
+                DrawPanel(centerX - 1.0f, centerY - 7.0f, 2.0f, 2.0f, new Color(234, 248, 255, 180));
+                break;
+            case 'k':
+                DrawPanel(centerX - 2.0f, centerY - 1.0f, 8.0f, 2.0f, color);
+                DrawPanel(centerX + 5.0f, centerY - 4.0f, 2.0f, 8.0f, color);
+                DrawPanel(centerX - 7.0f, centerY - 4.0f, 6.0f, 6.0f, color);
+                DrawPanel(centerX - 5.0f, centerY - 2.0f, 2.0f, 2.0f, new Color(22, 26, 34));
+                DrawPanel(centerX - 1.0f, centerY + 2.0f, 2.0f, 3.0f, color);
+                DrawPanel(centerX + 2.0f, centerY + 2.0f, 2.0f, 2.0f, color);
+                break;
+            case 'x':
+                DrawPanel(centerX - 7.0f, centerY - 6.0f, 14.0f, 2.0f, color);
+                DrawPanel(centerX - 7.0f, centerY + 5.0f, 14.0f, 2.0f, color);
+                DrawPanel(centerX - 7.0f, centerY - 6.0f, 2.0f, 13.0f, color);
+                DrawPanel(centerX + 5.0f, centerY - 6.0f, 2.0f, 13.0f, color);
+                DrawPanel(centerX - 4.0f, centerY - 3.0f, 2.0f, 7.0f, new Color(74, 54, 40));
+                DrawPanel(centerX, centerY - 3.0f, 2.0f, 7.0f, new Color(74, 54, 40));
+                DrawPanel(centerX - 2.0f, centerY - 9.0f, 4.0f, 4.0f, new Color(182, 152, 86));
+                break;
+            case 'M':
+                DrawPanel(centerX - 5.0f, centerY - 5.0f, 4.0f, 4.0f, color);
+                DrawPanel(centerX + 1.0f, centerY - 5.0f, 4.0f, 4.0f, color);
+                DrawPanel(centerX - 3.0f, centerY + 1.0f, 6.0f, 2.0f, color);
+                DrawPanel(centerX - 1.0f, centerY + 3.0f, 2.0f, 3.0f, color);
+                break;
+            case 'B':
+                DrawPanel(centerX - 6.0f, centerY - 4.0f, 12.0f, 8.0f, color);
+                DrawPanel(centerX - 3.0f, centerY - 8.0f, 2.0f, 4.0f, new Color(220, 188, 122));
+                DrawPanel(centerX - 1.0f, centerY - 10.0f, 2.0f, 6.0f, new Color(240, 206, 132));
+                DrawPanel(centerX + 1.0f, centerY - 8.0f, 2.0f, 4.0f, new Color(220, 188, 122));
+                DrawPanel(centerX - 2.0f, centerY - 1.0f, 4.0f, 4.0f, new Color(232, 206, 206));
+                break;
+        }
     }
 
     private void DrawPartyTrail(RectangleF leaderTile)
@@ -1288,8 +1647,8 @@ public sealed class NotimaGame : Game
                 44.0f,
                 44.0f);
 
-            spriteBatch.Draw(whiteTexture, new RectangleF(destination.X + 10.0f, destination.Y + destination.Height - 5.0f, destination.Width - 20.0f, 3.0f), new Color(0, 0, 0, 56));
-            spriteBatch.Draw(playerTexture, destination, sourceRect, tints[i], 0, Vector2.Zero);
+            spriteBatch.Draw(whiteTexture, UiRect(new RectangleF(destination.X + 10.0f, destination.Y + destination.Height - 5.0f, destination.Width - 20.0f, 3.0f)), new Color(0, 0, 0, 56));
+            spriteBatch.Draw(playerTexture, UiRect(destination), sourceRect, tints[i], 0, Vector2.Zero);
         }
     }
 
@@ -1368,21 +1727,34 @@ public sealed class NotimaGame : Game
             return;
         }
 
-        DrawPanel(PanelX, PanelY, PanelWidth, PanelHeight, new Color(15, 18, 29, 236));
-        DrawFrame(new RectangleF(PanelX, PanelY, PanelWidth, PanelHeight), new Color(173, 145, 89), 2);
-        DrawText(panelTitle, new Vector2(PanelX + 22, PanelY + 22), new Color(188, 164, 109), 3);
+        if ((uiMode == UiMode.Dungeon || uiMode == UiMode.Dialog) && string.IsNullOrWhiteSpace(panelTitle) && panelLines.Count == 0)
+        {
+            return;
+        }
+
+        var panelRect = GetPanelRect();
+        DrawPanel(panelRect.X, panelRect.Y, panelRect.Width, panelRect.Height, new Color(15, 18, 29, 236));
+        DrawFrame(panelRect, new Color(173, 145, 89), 2);
+        DrawText(panelTitle, new Vector2(panelRect.X + 22, panelRect.Y + 22), new Color(188, 164, 109), 3);
 
         if (uiMode == UiMode.Encounter && encounter is not null)
         {
-            DrawEncounterAnimation();
+            DrawEncounterAnimation(panelRect);
         }
 
-        var lineY = uiMode == UiMode.Encounter ? PanelY + 214 : PanelY + 72;
+        var lineY = uiMode == UiMode.Encounter ? panelRect.Y + 226 : panelRect.Y + 72;
         foreach (var line in panelLines)
         {
-            DrawWrappedText(line, new Vector2(PanelX + 22, lineY), 2, PanelWidth - 44, new Color(232, 238, 252));
-            lineY += 32;
+            DrawWrappedText(line, new Vector2(panelRect.X + 22, lineY), 2, (int)panelRect.Width - 44, new Color(232, 238, 252));
+            lineY += uiMode == UiMode.Encounter ? 38 : 32;
         }
+    }
+
+    private RectangleF GetPanelRect()
+    {
+        return uiMode == UiMode.Encounter
+            ? new RectangleF(84, 266, 580, EncounterPanelHeight)
+            : new RectangleF(PanelX, PanelY, PanelWidth, PanelHeight);
     }
 
     private void DrawTownScene()
@@ -1438,16 +1810,16 @@ public sealed class NotimaGame : Game
             var sourceRect = new RectangleF(frame.X, frame.Y, frame.Width, frame.Height);
             var bounce = MathF.Sin((totalTime * 5.0f) + i) * 2.0f;
             var destination = new RectangleF(origin.X + (i * 42.0f), origin.Y + bounce, 30.0f, 30.0f);
-            spriteBatch.Draw(whiteTexture, new RectangleF(destination.X + 4.0f, destination.Y + destination.Height - 3.0f, destination.Width - 8.0f, 2.0f), new Color(0, 0, 0, 56));
+            spriteBatch.Draw(whiteTexture, UiRect(new RectangleF(destination.X + 4.0f, destination.Y + destination.Height - 3.0f, destination.Width - 8.0f, 2.0f)), new Color(0, 0, 0, 56));
             var tint = member.IsAlive ? member.Tint : new Color(84, 92, 112);
-            spriteBatch.Draw(playerTexture, destination, sourceRect, tint, 0, Vector2.Zero);
+            spriteBatch.Draw(playerTexture, UiRect(destination), sourceRect, tint, 0, Vector2.Zero);
             DrawText($"{member.Health}/{member.MaxHealth}", new Vector2(destination.X - 2.0f, destination.Bottom + 6.0f), member.IsAlive ? new Color(220, 230, 255) : new Color(130, 136, 148), 1);
         }
     }
 
-    private void DrawEncounterAnimation()
+    private void DrawEncounterAnimation(RectangleF panelRect)
     {
-        var boardRect = new RectangleF(PanelX + 18, PanelY + 56, PanelWidth - 36, 144);
+        var boardRect = new RectangleF(panelRect.X + 18, panelRect.Y + 56, panelRect.Width - 36, 144);
         DrawPanel(boardRect.X, boardRect.Y, boardRect.Width, boardRect.Height, new Color(28, 36, 50, 220));
         DrawFrame(boardRect, new Color(106, 128, 177), 1);
 
@@ -1457,7 +1829,7 @@ public sealed class NotimaGame : Game
             for (var boardX = 0; boardX < 4; boardX++)
             {
                 var tile = GetEncounterTileDestination(boardOrigin, boardX, boardY);
-                spriteBatch.Draw(tileTexture, tile, GetIsoTileSource('.'), Color.White, 0, Vector2.Zero);
+                spriteBatch.Draw(tileTexture, UiRect(tile), GetIsoTileSource('.'), Color.White, 0, Vector2.Zero);
             }
         }
 
@@ -1471,12 +1843,12 @@ public sealed class NotimaGame : Game
             var offset = GetPartyAttackOffset(i);
             var destination = new RectangleF(tile.X + 12.0f + offset.X, tile.Y - 4.0f + bounce + offset.Y, 34.0f, 34.0f);
             var shadowColor = member.IsAlive ? new Color(0, 0, 0, 64) : new Color(0, 0, 0, 24);
-            spriteBatch.Draw(whiteTexture, new RectangleF(destination.X + 8.0f, destination.Y + destination.Height - 5.0f, destination.Width - 16.0f, 3.0f), shadowColor);
+            spriteBatch.Draw(whiteTexture, UiRect(new RectangleF(destination.X + 8.0f, destination.Y + destination.Height - 5.0f, destination.Width - 16.0f, 3.0f)), shadowColor);
             var tint = member.IsAlive ? member.Tint : new Color(78, 84, 98);
-            spriteBatch.Draw(playerTexture, destination, sourceRect, tint, 0, Vector2.Zero);
+            spriteBatch.Draw(playerTexture, UiRect(destination), sourceRect, tint, 0, Vector2.Zero);
             if (!member.IsAlive)
             {
-                spriteBatch.Draw(whiteTexture, new RectangleF(destination.X + 6.0f, destination.Y + 16.0f, destination.Width - 12.0f, 2.0f), new Color(176, 82, 82));
+                spriteBatch.Draw(whiteTexture, UiRect(new RectangleF(destination.X + 6.0f, destination.Y + 16.0f, destination.Width - 12.0f, 2.0f)), new Color(176, 82, 82));
             }
         }
 
@@ -1499,12 +1871,12 @@ public sealed class NotimaGame : Game
             }
 
             var enemyTile = GetEncounterTileDestination(boardOrigin, enemy.BoardX, enemy.BoardY);
-            spriteBatch.Draw(tileTexture, enemyTile, GetIsoTileSource(encounter.Name == "FEN LEECHES" ? 'F' : '*'), Color.White, 0, Vector2.Zero);
+            spriteBatch.Draw(tileTexture, UiRect(enemyTile), GetIsoTileSource(encounter.Name == "FEN LEECHES" ? 'F' : '*'), Color.White, 0, Vector2.Zero);
 
             if (i == selectedEnemyIndex && IsEnemyTargetable(i))
             {
                 var highlight = new RectangleF(enemyTile.X + 8.0f, enemyTile.Y + 14.0f, enemyTile.Width - 16.0f, enemyTile.Height - 28.0f);
-                spriteBatch.Draw(whiteTexture, highlight, new Color(142, 112, 64, 36));
+                spriteBatch.Draw(whiteTexture, UiRect(highlight), new Color(142, 112, 64, 36));
                 DrawFrame(highlight, new Color(164, 132, 76), 1);
             }
 
@@ -1529,8 +1901,8 @@ public sealed class NotimaGame : Game
         var bob = MathF.Sin(totalTime * 5.0f) * 2.0f;
         var source = GetEnemySourceFrame(enemyName, frameIndex);
         var destination = new RectangleF(origin.X, origin.Y + bob, source.Width * scale, source.Height * scale);
-        spriteBatch.Draw(whiteTexture, new RectangleF(destination.X + 4.0f, destination.Bottom - 4.0f, destination.Width - 8.0f, 3.0f), new Color(0, 0, 0, 56));
-        spriteBatch.Draw(enemyTexture, destination, new RectangleF(source.X, source.Y, source.Width, source.Height), Color.White, 0, Vector2.Zero);
+        spriteBatch.Draw(whiteTexture, UiRect(new RectangleF(destination.X + 4.0f, destination.Bottom - 4.0f, destination.Width - 8.0f, 3.0f)), new Color(0, 0, 0, 56));
+        spriteBatch.Draw(enemyTexture, UiRect(destination), new RectangleF(source.X, source.Y, source.Width, source.Height), Color.White, 0, Vector2.Zero);
     }
 
     private static Rectangle GetEnemySourceFrame(string enemyName, int frameIndex)
@@ -1713,6 +2085,8 @@ public sealed class NotimaGame : Game
             return;
         }
 
+        ReviveFallenAfterVictory();
+
         party.Gold += encounter.RewardGold;
         party.Food += encounter.RewardFood;
 
@@ -1738,9 +2112,12 @@ public sealed class NotimaGame : Game
             $"FOOD +{encounter.RewardFood}",
             "ENTER CONTINUES"
         );
+        audioPlayer?.PlayTrumpet();
         encounter = null;
         encounterFromDungeon = false;
         encounterIsBoss = false;
+        encounterTurnOrder.Clear();
+        encounterTurnCursor = 0;
         selectedEnemyIndex = 0;
         playerAttackAnimationTime = 0.0f;
         enemyAttackAnimationTime = 0.0f;
@@ -1813,6 +2190,141 @@ public sealed class NotimaGame : Game
         return selectedCombatAction == CombatAction.Attack
             ? "MODE ATTACK"
             : $"MODE SPELL {GetSpellName(selectedSpell)} MP {party.Mana}/{party.MaxMana}";
+    }
+
+    private void ResetEncounterTurnState()
+    {
+        BuildEncounterTurnOrder();
+        encounterTurnCursor = 0;
+        NormalizeEncounterTurnCursor();
+    }
+
+    private void BuildEncounterTurnOrder()
+    {
+        encounterTurnOrder.Clear();
+
+        var partyTurns = party.Members
+            .Select((member, index) => new CombatTurnEntry(true, index))
+            .Where(turn => party.Members[turn.Index].IsAlive)
+            .ToList();
+        var enemyTurns = encounter?.Enemies
+            .Select((enemy, index) => new CombatTurnEntry(false, index))
+            .Where(turn => encounter!.Enemies[turn.Index].IsAlive)
+            .ToList() ?? [];
+
+        var count = Math.Max(partyTurns.Count, enemyTurns.Count);
+        for (var i = 0; i < count; i++)
+        {
+            if (i < partyTurns.Count)
+            {
+                encounterTurnOrder.Add(partyTurns[i]);
+            }
+
+            if (i < enemyTurns.Count)
+            {
+                encounterTurnOrder.Add(enemyTurns[i]);
+            }
+        }
+    }
+
+    private void NormalizeEncounterTurnCursor()
+    {
+        BuildEncounterTurnOrder();
+        if (encounterTurnOrder.Count == 0)
+        {
+            encounterTurnCursor = 0;
+            return;
+        }
+
+        encounterTurnCursor = ((encounterTurnCursor % encounterTurnOrder.Count) + encounterTurnOrder.Count) % encounterTurnOrder.Count;
+    }
+
+    private void AdvanceEncounterTurn(CombatTurnEntry currentTurn)
+    {
+        var previousOrder = encounterTurnOrder.ToList();
+        var currentIndex = encounterTurnCursor;
+        BuildEncounterTurnOrder();
+        if (encounterTurnOrder.Count == 0)
+        {
+            encounterTurnCursor = 0;
+            return;
+        }
+
+        CombatTurnEntry? nextTurn = null;
+        for (var offset = 1; offset <= previousOrder.Count; offset++)
+        {
+            var candidate = previousOrder[(currentIndex + offset) % previousOrder.Count];
+            if (IsCombatTurnAlive(candidate))
+            {
+                nextTurn = candidate;
+                break;
+            }
+        }
+
+        if (nextTurn is null)
+        {
+            encounterTurnCursor = 0;
+            return;
+        }
+
+        var matchIndex = encounterTurnOrder.FindIndex(turn => turn.IsParty == nextTurn.Value.IsParty && turn.Index == nextTurn.Value.Index);
+        encounterTurnCursor = matchIndex >= 0 ? matchIndex : 0;
+    }
+
+    private bool IsCombatTurnAlive(CombatTurnEntry turn)
+    {
+        if (turn.IsParty)
+        {
+            return turn.Index >= 0 && turn.Index < party.Members.Count && party.Members[turn.Index].IsAlive;
+        }
+
+        return encounter is not null
+            && turn.Index >= 0
+            && turn.Index < encounter.Enemies.Count
+            && encounter.Enemies[turn.Index].IsAlive;
+    }
+
+    private string GetTurnBanner()
+    {
+        if (encounterTurnOrder.Count == 0)
+        {
+            return "TURN ?";
+        }
+
+        var turn = encounterTurnOrder[Math.Clamp(encounterTurnCursor, 0, encounterTurnOrder.Count - 1)];
+        return turn.IsParty
+            ? $"TURN {party.Members[turn.Index].Name}"
+            : $"TURN {encounter?.Enemies[turn.Index].Name ?? "FOE"}";
+    }
+
+    private string GetCombatPrompt()
+    {
+        if (encounterTurnOrder.Count == 0)
+        {
+            return "ENTER ACTS";
+        }
+
+        var turn = encounterTurnOrder[Math.Clamp(encounterTurnCursor, 0, encounterTurnOrder.Count - 1)];
+        return turn.IsParty
+            ? $"ARROWS PICK TARGET  ENTER ACTS  {GetCombatSummary()}"
+            : "ENTER RESOLVES ENEMY TURN";
+    }
+
+    private void RefreshEncounterPanel()
+    {
+        if (encounter is null)
+        {
+            return;
+        }
+
+        var target = GetSelectedEnemy();
+        panelLines =
+        [
+            target is null ? "NO TARGET" : $"{target.Name} HP {target.Health}/{target.MaxHealth}",
+            $"PARTY HP {party.TotalHealth}/{party.MaxTotalHealth}",
+            GetTurnBanner(),
+            GetCombatPrompt(),
+        ];
     }
 
     private int? GetLowestHealthPartyIndex()
@@ -1898,6 +2410,35 @@ public sealed class NotimaGame : Game
         }
 
         return false;
+    }
+
+    private void RegeneratePartyOneHitPoint()
+    {
+        foreach (var member in party.Members)
+        {
+            if (!member.IsAlive || member.Health >= member.MaxHealth)
+            {
+                continue;
+            }
+
+            member.Health++;
+        }
+    }
+
+    private void ReviveFallenAfterVictory()
+    {
+        if (party.Members.All(member => !member.IsAlive))
+        {
+            return;
+        }
+
+        foreach (var member in party.Members)
+        {
+            if (!member.IsAlive)
+            {
+                member.Health = 1;
+            }
+        }
     }
 
     private string GetSavePath()
@@ -2067,7 +2608,9 @@ public sealed class NotimaGame : Game
 
     private void DrawText(string text, Vector2 position, Color color, int scale)
     {
-        var cursorX = position.X;
+        var scaledPosition = UiPosition(position);
+        var scaledPixel = MathF.Max(1.0f, scale * uiScale);
+        var cursorX = scaledPosition.X;
         foreach (var character in text.ToUpperInvariant())
         {
             if (!glyphs.TryGetValue(character, out var pattern))
@@ -2086,18 +2629,18 @@ public sealed class NotimaGame : Game
 
                     spriteBatch.Draw(
                         whiteTexture,
-                        new RectangleF(cursorX + (column * scale), position.Y + (row * scale), scale, scale),
+                        new RectangleF(cursorX + (column * scaledPixel), scaledPosition.Y + (row * scaledPixel), scaledPixel, scaledPixel),
                         color);
                 }
             }
 
-            cursorX += (pattern[0].Length + 1) * scale;
+            cursorX += (pattern[0].Length + 1) * scaledPixel;
         }
     }
 
     private void DrawPanel(float x, float y, float width, float height, Color color)
     {
-        spriteBatch.Draw(whiteTexture, new RectangleF(x, y, width, height), color);
+        spriteBatch.Draw(whiteTexture, UiRect(new RectangleF(x, y, width, height)), color);
     }
 
     private void DrawFrame(RectangleF rect, Color color, float thickness)
@@ -2120,6 +2663,23 @@ public sealed class NotimaGame : Game
         };
         Window.Title = $"notima | {modeText} | HP {party.TotalHealth}/{party.MaxTotalHealth} | GOLD {party.Gold} | FOOD {party.Food} | W{party.WeaponTier} A{party.ArmorTier} K{party.Keys}";
     }
+
+    private void UpdateLayout()
+    {
+        var viewportWidth = GraphicsDevice.Presenter.BackBuffer.Width;
+        var viewportHeight = GraphicsDevice.Presenter.BackBuffer.Height;
+        uiScale = MathF.Max(0.5f, MathF.Min(viewportWidth / BaseWidth, viewportHeight / BaseHeight));
+        layoutOffsetX = (viewportWidth - (BaseWidth * uiScale)) * 0.5f;
+        layoutOffsetY = (viewportHeight - (BaseHeight * uiScale)) * 0.5f;
+    }
+
+    private Vector2 UiPosition(Vector2 position) => new(layoutOffsetX + (position.X * uiScale), layoutOffsetY + (position.Y * uiScale));
+
+    private RectangleF UiRect(RectangleF rect) => new(
+        layoutOffsetX + (rect.X * uiScale),
+        layoutOffsetY + (rect.Y * uiScale),
+        rect.Width * uiScale,
+        rect.Height * uiScale);
 
     private static RectangleF GetIsoTileSource(char symbol)
     {
@@ -2661,6 +3221,8 @@ internal enum SpellKind
     Aegis,
 }
 
+internal readonly record struct CombatTurnEntry(bool IsParty, int Index);
+
 internal enum Direction
 {
     Down,
@@ -2716,6 +3278,7 @@ internal static class BitmapFont
             ['7'] = ["11111", "00001", "00010", "00100", "01000", "01000", "01000"],
             ['8'] = ["01110", "10001", "10001", "01110", "10001", "10001", "01110"],
             ['9'] = ["01110", "10001", "10001", "01111", "00001", "00001", "01110"],
+            ['+'] = ["00000", "00100", "00100", "11111", "00100", "00100", "00000"],
             ['!'] = ["00100", "00100", "00100", "00100", "00100", "00000", "00100"],
             ['?'] = ["01110", "10001", "00001", "00010", "00100", "00000", "00100"],
             ['.'] = ["00000", "00000", "00000", "00000", "00000", "00110", "00110"],
