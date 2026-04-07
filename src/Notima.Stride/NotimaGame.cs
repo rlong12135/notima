@@ -56,6 +56,7 @@ public sealed class NotimaGame : Game
     private List<string> panelLines = [];
     private string statusLine = "Find the road east and the old dungeon south.";
     private float moveCooldown;
+    private float totalTime;
     private int walkFrame;
 
     public NotimaGame()
@@ -101,6 +102,7 @@ public sealed class NotimaGame : Game
         base.Update(gameTime);
 
         var dt = (float)gameTime.Elapsed.TotalSeconds;
+        totalTime += dt;
         moveCooldown = MathF.Max(0.0f, moveCooldown - dt);
 
         HandleInput();
@@ -619,9 +621,44 @@ public sealed class NotimaGame : Game
             TilePixels - 4.0f,
             TilePixels - 2.0f);
 
+        DrawPartyTrail(cursorDestination);
         spriteBatch.Draw(whiteTexture, new RectangleF(playerDestination.X + 3.0f, playerDestination.Y + playerDestination.Height - 4.0f, playerDestination.Width - 6.0f, 3.0f), new Color(0, 0, 0, 82));
         var playerSource = new RectangleF(playerFrame.X, playerFrame.Y, playerFrame.Width, playerFrame.Height);
         spriteBatch.Draw(playerTexture, playerDestination, playerSource, Color.White, 0, Vector2.Zero);
+    }
+
+    private void DrawPartyTrail(RectangleF leaderTile)
+    {
+        var source = GetPlayerSourceFrameFor(Direction.Down, (int)(totalTime * 8.0f) % 3);
+        var sourceRect = new RectangleF(source.X, source.Y, source.Width, source.Height);
+        var tints = new[]
+        {
+            new Color(181, 214, 255),
+            new Color(255, 204, 214),
+            new Color(255, 232, 174),
+        };
+
+        var spacing = facing switch
+        {
+            Direction.Up => new Vector2(0.0f, 7.0f),
+            Direction.Down => new Vector2(0.0f, -7.0f),
+            Direction.Left => new Vector2(7.0f, 0.0f),
+            _ => new Vector2(-7.0f, 0.0f),
+        };
+
+        for (var i = 0; i < tints.Length; i++)
+        {
+            var bob = MathF.Sin((totalTime * 4.0f) + (i * 0.85f)) * 1.2f;
+            var offset = spacing * (i + 1);
+            var destination = new RectangleF(
+                leaderTile.X + 2.0f + offset.X,
+                leaderTile.Y + 1.0f + offset.Y + bob,
+                TilePixels - 6.0f,
+                TilePixels - 4.0f);
+
+            spriteBatch.Draw(whiteTexture, new RectangleF(destination.X + 2.0f, destination.Y + destination.Height - 3.0f, destination.Width - 4.0f, 2.0f), new Color(0, 0, 0, 56));
+            spriteBatch.Draw(playerTexture, destination, sourceRect, tints[i], 0, Vector2.Zero);
+        }
     }
 
     private void DrawLandmarkMarker(char symbol, int x, int y)
@@ -646,7 +683,12 @@ public sealed class NotimaGame : Game
 
     private Rectangle GetPlayerSourceFrame()
     {
-        var row = facing switch
+        return GetPlayerSourceFrameFor(facing, walkFrame);
+    }
+
+    private static Rectangle GetPlayerSourceFrameFor(Direction direction, int frame)
+    {
+        var row = direction switch
         {
             Direction.Down => 0,
             Direction.Left => 1,
@@ -654,7 +696,7 @@ public sealed class NotimaGame : Game
             _ => 3,
         };
 
-        var column = walkFrame switch
+        var column = frame switch
         {
             0 => 1,
             1 => 0,
@@ -684,9 +726,12 @@ public sealed class NotimaGame : Game
         DrawText("STATUS", new Vector2(HudX + 22, 450), new Color(255, 234, 160), 2);
         DrawWrappedText(statusLine, new Vector2(HudX + 22, 480), 2, HudWidth - 44, new Color(230, 234, 243));
 
-        DrawText("MOVE WASD OR ARROWS", new Vector2(HudX + 22, 592), new Color(198, 220, 255), 2);
-        DrawText("ENTER INTERACTS", new Vector2(HudX + 22, 620), new Color(198, 220, 255), 2);
-        DrawText("R RESETS  ESC QUITS", new Vector2(HudX + 22, 648), new Color(198, 220, 255), 2);
+        DrawText("PARTY", new Vector2(HudX + 22, 550), new Color(255, 234, 160), 2);
+        DrawPartyBanner(new Vector2(HudX + 22, 574));
+
+        DrawText("MOVE WASD OR ARROWS", new Vector2(HudX + 22, 622), new Color(198, 220, 255), 2);
+        DrawText("ENTER INTERACTS", new Vector2(HudX + 22, 648), new Color(198, 220, 255), 2);
+        DrawText("R RESETS  ESC QUITS", new Vector2(HudX + 22, 674), new Color(198, 220, 255), 2);
     }
 
     private void DrawPanels()
@@ -700,12 +745,143 @@ public sealed class NotimaGame : Game
         DrawFrame(new RectangleF(PanelX, PanelY, PanelWidth, PanelHeight), new Color(255, 227, 147), 2);
         DrawText(panelTitle, new Vector2(PanelX + 22, PanelY + 22), new Color(255, 236, 168), 3);
 
-        var lineY = PanelY + 72;
+        if (uiMode == UiMode.Encounter && encounter is not null)
+        {
+            DrawEncounterAnimation();
+        }
+
+        var lineY = uiMode == UiMode.Encounter ? PanelY + 152 : PanelY + 72;
         foreach (var line in panelLines)
         {
             DrawWrappedText(line, new Vector2(PanelX + 22, lineY), 2, PanelWidth - 44, new Color(232, 238, 252));
             lineY += 32;
         }
+    }
+
+    private void DrawPartyBanner(Vector2 origin)
+    {
+        var colors = new[]
+        {
+            Color.White,
+            new Color(181, 214, 255),
+            new Color(255, 204, 214),
+            new Color(255, 232, 174),
+        };
+
+        for (var i = 0; i < colors.Length; i++)
+        {
+            var frame = GetPlayerSourceFrameFor(i == 0 ? facing : Direction.Down, ((int)(totalTime * 6.0f) + i) % 3);
+            var sourceRect = new RectangleF(frame.X, frame.Y, frame.Width, frame.Height);
+            var bounce = MathF.Sin((totalTime * 5.0f) + i) * 2.0f;
+            var destination = new RectangleF(origin.X + (i * 42.0f), origin.Y + bounce, 30.0f, 30.0f);
+            spriteBatch.Draw(whiteTexture, new RectangleF(destination.X + 4.0f, destination.Y + destination.Height - 3.0f, destination.Width - 8.0f, 2.0f), new Color(0, 0, 0, 56));
+            spriteBatch.Draw(playerTexture, destination, sourceRect, colors[i], 0, Vector2.Zero);
+        }
+    }
+
+    private void DrawEncounterAnimation()
+    {
+        DrawPanel(PanelX + 18, PanelY + 56, PanelWidth - 36, 84, new Color(34, 39, 57, 210));
+        DrawFrame(new RectangleF(PanelX + 18, PanelY + 56, PanelWidth - 36, 84), new Color(106, 128, 177), 1);
+
+        var partyBase = new Vector2(PanelX + 34, PanelY + 80);
+        var partyColors = new[]
+        {
+            Color.White,
+            new Color(181, 214, 255),
+            new Color(255, 204, 214),
+            new Color(255, 232, 174),
+        };
+
+        for (var i = 0; i < partyColors.Length; i++)
+        {
+            var frame = GetPlayerSourceFrameFor(i == 0 ? facing : Direction.Right, ((int)(totalTime * 7.0f) + i) % 3);
+            var sourceRect = new RectangleF(frame.X, frame.Y, frame.Width, frame.Height);
+            var bounce = MathF.Sin((totalTime * 7.0f) + (i * 0.7f)) * 1.8f;
+            var destination = new RectangleF(partyBase.X + (i * 30.0f), partyBase.Y + bounce, 26.0f, 26.0f);
+            spriteBatch.Draw(playerTexture, destination, sourceRect, partyColors[i], 0, Vector2.Zero);
+        }
+
+        DrawEnemySprite(new Vector2(PanelX + 260, PanelY + 74), 4);
+    }
+
+    private void DrawEnemySprite(Vector2 origin, int scale)
+    {
+        if (encounter is null)
+        {
+            return;
+        }
+
+        var frameIndex = ((int)(totalTime * 6.0f)) % 2;
+        var bob = MathF.Sin(totalTime * 5.0f) * 2.0f;
+        var palette = GetEnemyPalette(encounter.Name);
+        var frame = GetEnemyFrame(encounter.Name, frameIndex);
+
+        for (var row = 0; row < frame.Length; row++)
+        {
+            for (var column = 0; column < frame[row].Length; column++)
+            {
+                var code = frame[row][column];
+                if (code == '.')
+                {
+                    continue;
+                }
+
+                if (!palette.TryGetValue(code, out var color))
+                {
+                    continue;
+                }
+
+                spriteBatch.Draw(
+                    whiteTexture,
+                    new RectangleF(origin.X + (column * scale), origin.Y + (row * scale) + bob, scale, scale),
+                    color);
+            }
+        }
+    }
+
+    private static Dictionary<char, Color> GetEnemyPalette(string encounterName)
+    {
+        return encounterName switch
+        {
+            "WOLF PACK" => new Dictionary<char, Color>
+            {
+                ['A'] = new(92, 101, 122),
+                ['B'] = new(165, 179, 207),
+                ['C'] = new(232, 236, 255),
+                ['D'] = new(255, 118, 118),
+            },
+            "FEN LEECHES" => new Dictionary<char, Color>
+            {
+                ['A'] = new(88, 131, 84),
+                ['B'] = new(140, 203, 130),
+                ['C'] = new(220, 250, 186),
+                ['D'] = new(255, 148, 133),
+            },
+            _ => new Dictionary<char, Color>
+            {
+                ['A'] = new(118, 69, 54),
+                ['B'] = new(183, 111, 84),
+                ['C'] = new(247, 205, 164),
+                ['D'] = new(232, 232, 240),
+            },
+        };
+    }
+
+    private static string[] GetEnemyFrame(string encounterName, int frameIndex)
+    {
+        return encounterName switch
+        {
+            "WOLF PACK" => frameIndex == 0
+                ? ["....AA......", "...ABBA.....", "..ABBBAA....", ".ABBCCBA....", ".ABCCCCBA...", ".ABBDDDBA...", ".AABBBBAA...", ".A..AA..A..."]
+                : [".....AA.....", "....ABBA....", "...ABBBAA...", "..ABBCCBA...", ".ABCCCCBA...", ".ABBDDDBA...", ".AABBBBAA...", ".AA..AA.A..."],
+            "FEN LEECHES" => frameIndex == 0
+                ? ["....AA......", "..AABBAA....", ".ABBCCBBA...", ".ABCCCCBA...", ".ABCDDCBA...", ".ABBCCBBA...", "..AABBAA....", "....AA......"]
+                : ["...AA.......", "..AABBA.....", ".ABBCCBBA...", ".ABCCCCCBA..", ".ABCDDDCBA..", ".ABBCCBBA...", "..AABBA.....", "...AA......."],
+            _ => frameIndex == 0
+                ? ["....DD......", "...DAAD.....", "..DABBAD....", ".DAABBACD...", ".DAABBBAD...", ".DABCCBAD...", ".DDAA.ADD...", "...D..D....."]
+                : [".....DD.....", "....DAAD....", "...DABBAD...", "..DAABBACD..", ".DAABBBAD...", ".DABCCBAD...", ".DDAA.ADD...", "..D....D...."],
+        };
     }
 
     private void DrawWrappedText(string text, Vector2 position, int scale, int maxWidth, Color color)
