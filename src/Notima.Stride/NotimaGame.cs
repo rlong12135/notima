@@ -93,6 +93,9 @@ public sealed class NotimaGame : Game
     private SpellKind selectedSpell = SpellKind.Ember;
     private List<CombatTurnEntry> encounterTurnOrder = [];
     private int encounterTurnCursor;
+    private GridPoint pendingMoveDelta = GridPoint.Zero;
+    private GridPoint pendingMoveTarget = GridPoint.Zero;
+    private bool hasPendingMove;
     private float uiScale = 1.0f;
     private float layoutOffsetX;
     private float layoutOffsetY;
@@ -184,12 +187,14 @@ public sealed class NotimaGame : Game
 
         if (Input.IsKeyPressed(Keys.F5))
         {
+            ClearPendingMove();
             SaveGame();
             return;
         }
 
         if (Input.IsKeyPressed(Keys.F9))
         {
+            ClearPendingMove();
             LoadGame();
             return;
         }
@@ -212,12 +217,14 @@ public sealed class NotimaGame : Game
 
         if (Input.IsKeyPressed(Keys.R))
         {
+            ClearPendingMove();
             ResetOverworld();
             return;
         }
 
         if (Input.IsKeyPressed(Keys.Enter) || Input.IsKeyPressed(Keys.Space))
         {
+            ClearPendingMove();
             InteractWithCurrentTile();
             return;
         }
@@ -249,13 +256,10 @@ public sealed class NotimaGame : Game
             facing = Direction.Right;
         }
 
-        if (delta == GridPoint.Zero)
+        if (delta != GridPoint.Zero)
         {
-            return;
+            HandleQueuedMove(delta, isDungeonMove: false);
         }
-
-        moveCooldown = MoveRepeatDelay;
-        TryMove(delta);
     }
 
     private void HandleEncounterInput()
@@ -372,12 +376,14 @@ public sealed class NotimaGame : Game
 
         if (Input.IsKeyPressed(Keys.Enter) || Input.IsKeyPressed(Keys.Space))
         {
+            ClearPendingMove();
             InteractWithDungeonTile();
             return;
         }
 
         if (Input.IsKeyPressed(Keys.R))
         {
+            ClearPendingMove();
             LeaveDungeon("You withdraw from the dungeon.");
             return;
         }
@@ -409,19 +415,17 @@ public sealed class NotimaGame : Game
             facing = Direction.Right;
         }
 
-        if (delta == GridPoint.Zero)
+        if (delta != GridPoint.Zero)
         {
-            return;
+            HandleQueuedMove(delta, isDungeonMove: true);
         }
-
-        moveCooldown = MoveRepeatDelay;
-        TryMoveDungeon(delta);
     }
 
     private void HandleDialogInput()
     {
         if (Input.IsKeyPressed(Keys.Enter) || Input.IsKeyPressed(Keys.Space))
         {
+            ClearPendingMove();
             uiMode = dungeon is null ? UiMode.Overworld : UiMode.Dungeon;
             panelTitle = string.Empty;
             panelLines.Clear();
@@ -463,6 +467,7 @@ public sealed class NotimaGame : Game
         panelLines.Clear();
         uiMode = UiMode.Overworld;
         visitedLandmarks.Clear();
+        ClearPendingMove();
         statusLine = DescribeCurrentTile();
     }
 
@@ -470,6 +475,40 @@ public sealed class NotimaGame : Game
     {
         LoadMapFromDisk();
         statusLine = "The overworld settles back into place.";
+    }
+
+    private void HandleQueuedMove(GridPoint delta, bool isDungeonMove)
+    {
+        var origin = isDungeonMove ? dungeonCell : playerCell;
+        var target = new GridPoint(origin.X + delta.X, origin.Y + delta.Y);
+
+        if (hasPendingMove && pendingMoveDelta == delta)
+        {
+            ClearPendingMove();
+            moveCooldown = MoveRepeatDelay;
+            if (isDungeonMove)
+            {
+                TryMoveDungeon(delta);
+            }
+            else
+            {
+                TryMove(delta);
+            }
+
+            return;
+        }
+
+        hasPendingMove = true;
+        pendingMoveDelta = delta;
+        pendingMoveTarget = target;
+        statusLine = $"Confirm move to [{target.X},{target.Y}]";
+    }
+
+    private void ClearPendingMove()
+    {
+        hasPendingMove = false;
+        pendingMoveDelta = GridPoint.Zero;
+        pendingMoveTarget = GridPoint.Zero;
     }
 
     private void TryMoveDungeon(GridPoint delta)
@@ -658,6 +697,7 @@ public sealed class NotimaGame : Game
 
         if (random.NextDouble() < 0.45)
         {
+            ClearPendingMove();
             statusLine = $"You slip away from the {encounter.Name}.";
             encounter = null;
             uiMode = UiMode.Overworld;
@@ -779,6 +819,7 @@ public sealed class NotimaGame : Game
 
     private void HandleDefeat()
     {
+        ClearPendingMove();
         party.ResetMembers(6 + ((party.Level - 1) * 2));
         party.Gold = Math.Max(0, party.Gold - 12);
         playerCell = new GridPoint(map.Start.X, map.Start.Y);
@@ -831,6 +872,7 @@ public sealed class NotimaGame : Game
 
     private void OpenTownMenu(char symbol)
     {
+        ClearPendingMove();
         townMenu = TownMenuState.Create(symbol);
         uiMode = UiMode.Town;
         audioPlayer?.PlayBell();
@@ -1045,6 +1087,7 @@ public sealed class NotimaGame : Game
 
     private void CloseTownMenu(string message)
     {
+        ClearPendingMove();
         townMenu = null;
         panelTitle = string.Empty;
         panelLines.Clear();
@@ -1054,6 +1097,7 @@ public sealed class NotimaGame : Game
 
     private void EnterDungeon()
     {
+        ClearPendingMove();
         dungeon = GenerateDungeonLevel(1);
         dungeonCell = dungeon.Start;
         uiMode = UiMode.Dungeon;
@@ -1126,6 +1170,7 @@ public sealed class NotimaGame : Game
 
     private void LeaveDungeon(string message)
     {
+        ClearPendingMove();
         dungeon = null;
         dungeonCell = GridPoint.Zero;
         uiMode = UiMode.Overworld;
@@ -1387,6 +1432,7 @@ public sealed class NotimaGame : Game
 
     private void StartDungeonEncounter(bool boss)
     {
+        ClearPendingMove();
         encounter = boss ? EncounterState.CreateDungeonBoss(dungeon?.Level ?? 1) : EncounterState.CreateDungeonPack(dungeon?.Level ?? 1);
         encounterFromDungeon = true;
         encounterIsBoss = boss;
@@ -1488,6 +1534,13 @@ public sealed class NotimaGame : Game
                 }
 
             }
+        }
+
+        if (hasPendingMove)
+        {
+            var previewDestination = GetIsoHighlightDestination(pendingMoveTarget.X, pendingMoveTarget.Y);
+            spriteBatch.Draw(whiteTexture, UiRect(previewDestination), new Color(178, 42, 42, 72));
+            DrawFrame(previewDestination, new Color(210, 66, 66), 3);
         }
 
         var cursorDestination = GetIsoHighlightDestination(currentCell.X, currentCell.Y);
