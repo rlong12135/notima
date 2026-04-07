@@ -63,6 +63,12 @@ public sealed class NotimaGame : Game
     private string statusLine = "Find the road east and the old dungeon south.";
     private float moveCooldown;
     private float totalTime;
+    private float playerAttackAnimationTime;
+    private float enemyAttackAnimationTime;
+    private int selectedEnemyIndex;
+    private int attackingPartyMemberIndex;
+    private int attackingEnemyIndex = -1;
+    private int attackedPartyMemberIndex = -1;
     private int walkFrame;
 
     public NotimaGame()
@@ -110,6 +116,8 @@ public sealed class NotimaGame : Game
         var dt = (float)gameTime.Elapsed.TotalSeconds;
         totalTime += dt;
         moveCooldown = MathF.Max(0.0f, moveCooldown - dt);
+        playerAttackAnimationTime = MathF.Max(0.0f, playerAttackAnimationTime - dt);
+        enemyAttackAnimationTime = MathF.Max(0.0f, enemyAttackAnimationTime - dt);
 
         HandleInput();
         UpdateWindowTitle();
@@ -203,6 +211,18 @@ public sealed class NotimaGame : Game
 
     private void HandleEncounterInput()
     {
+        if (Input.IsKeyPressed(Keys.Left) || Input.IsKeyPressed(Keys.A))
+        {
+            CycleEnemyTarget(-1);
+            return;
+        }
+
+        if (Input.IsKeyPressed(Keys.Right) || Input.IsKeyPressed(Keys.D) || Input.IsKeyPressed(Keys.Up) || Input.IsKeyPressed(Keys.W) || Input.IsKeyPressed(Keys.Down) || Input.IsKeyPressed(Keys.S))
+        {
+            CycleEnemyTarget(1);
+            return;
+        }
+
         if (Input.IsKeyPressed(Keys.R))
         {
             AttemptRetreat();
@@ -304,18 +324,23 @@ public sealed class NotimaGame : Game
 
         encounter = tile.Name switch
         {
-            "Forest" => new EncounterState("WOLF PACK", 14, 3, 6, 11, 4),
-            "Fen" => new EncounterState("FEN LEECHES", 13, 2, 5, 9, 6),
-            _ => new EncounterState("ROAD BANDITS", 12, 2, 5, 12, 3),
+            "Forest" => EncounterState.CreateWolfPack(),
+            "Fen" => EncounterState.CreateFenLeeches(),
+            _ => EncounterState.CreateRoadBandits(),
         };
+        selectedEnemyIndex = GetDefaultSelectedEnemy();
+        attackingEnemyIndex = -1;
+        attackedPartyMemberIndex = -1;
+        playerAttackAnimationTime = 0.0f;
+        enemyAttackAnimationTime = 0.0f;
 
         panelTitle = "ENCOUNTER";
         panelLines =
         [
             $"A {encounter.Name} RUSHES IN.",
-            $"FOE HP {encounter.Health}/{encounter.MaxHealth}",
-            "ENTER ATTACKS",
-            "R ATTEMPTS RETREAT",
+            $"FOES {encounter.AliveCount}/{encounter.Enemies.Count}",
+            "ARROWS PICK A TARGET",
+            "ENTER ATTACKS  R RETREATS",
         ];
         statusLine = $"Encounter! {encounter.Name} blocks the road.";
         uiMode = UiMode.Encounter;
@@ -329,33 +354,57 @@ public sealed class NotimaGame : Game
             return;
         }
 
-        var playerDamage = random.Next(4, 9) + party.Level;
-        encounter.Health = Math.Max(0, encounter.Health - playerDamage);
-        if (encounter.Health <= 0)
+        var target = GetSelectedEnemy();
+        if (target is null)
         {
-            party.Gold += encounter.RewardGold;
-            party.Food += encounter.RewardFood;
-            statusLine = $"{encounter.Name} defeated. Gold +{encounter.RewardGold}, Food +{encounter.RewardFood}.";
-            OpenDialog(
-                "VICTORY",
-                $"{encounter.Name} FALLS.",
-                $"GOLD +{encounter.RewardGold}",
-                $"FOOD +{encounter.RewardFood}",
-                "ENTER CONTINUES"
-            );
-            encounter = null;
+            HandleEncounterVictory();
             return;
         }
 
-        var enemyDamage = Math.Max(1, random.Next(encounter.AttackMin, encounter.AttackMax + 1) - (party.Level / 2));
+        var attackerIndex = GetFrontAlivePartyIndex() ?? 0;
+        attackingPartyMemberIndex = attackerIndex;
+        playerAttackAnimationTime = 0.24f;
+
+        var playerDamage = random.Next(4, 9) + party.Level;
+        if (attackerIndex >= 2)
+        {
+            playerDamage = Math.Max(2, playerDamage - 2);
+        }
+
+        target.Health = Math.Max(0, target.Health - playerDamage);
+        if (!target.IsAlive)
+        {
+            selectedEnemyIndex = GetDefaultSelectedEnemy();
+        }
+
+        if (encounter.AliveCount == 0)
+        {
+            HandleEncounterVictory();
+            return;
+        }
+
+        var enemy = encounter.Enemies.FirstOrDefault(enemyUnit => enemyUnit.IsAlive);
+        attackingEnemyIndex = enemy is null ? -1 : encounter.Enemies.IndexOf(enemy);
+        enemyAttackAnimationTime = enemy is null ? 0.0f : 0.24f;
+
+        var targetPartyIndex = GetFrontAlivePartyIndex() ?? GetBackAlivePartyIndex() ?? 0;
+        attackedPartyMemberIndex = targetPartyIndex;
+
+        var enemyDamageBase = enemy is null ? 1 : random.Next(enemy.AttackMin, enemy.AttackMax + 1);
+        var enemyDamage = Math.Max(1, enemyDamageBase - (party.Level / 2));
+        if (targetPartyIndex >= 2 && GetFrontAlivePartyIndex() is not null)
+        {
+            enemyDamage = Math.Max(1, enemyDamage - 2);
+        }
+
         party.Health = Math.Max(0, party.Health - enemyDamage);
-        statusLine = $"You hit for {playerDamage}. The {encounter.Name} answers for {enemyDamage}.";
+        statusLine = $"You hit {target.Name} for {playerDamage}. {enemy?.Name ?? encounter.Name} answers for {enemyDamage}.";
         panelLines =
         [
-            $"{encounter.Name} HP {encounter.Health}/{encounter.MaxHealth}",
+            $"{target.Name} HP {target.Health}/{target.MaxHealth}",
             $"PARTY HP {party.Health}/{party.MaxHealth}",
-            "ENTER ATTACKS",
-            "R ATTEMPTS RETREAT",
+            "ARROWS PICK A TARGET",
+            "ENTER ATTACKS  R RETREATS",
         ];
 
         if (party.Health <= 0)
@@ -382,15 +431,19 @@ public sealed class NotimaGame : Game
             return;
         }
 
-        var damage = Math.Max(1, random.Next(encounter.AttackMin, encounter.AttackMax + 1) - party.Level);
+        var enemy = encounter.Enemies.FirstOrDefault(enemyUnit => enemyUnit.IsAlive);
+        var damage = Math.Max(1, (enemy is null ? 2 : random.Next(enemy.AttackMin, enemy.AttackMax + 1)) - party.Level);
         party.Health = Math.Max(0, party.Health - damage);
+        attackingEnemyIndex = enemy is null ? -1 : encounter.Enemies.IndexOf(enemy);
+        attackedPartyMemberIndex = GetFrontAlivePartyIndex() ?? GetBackAlivePartyIndex() ?? 0;
+        enemyAttackAnimationTime = 0.24f;
         statusLine = $"Retreat failed. The {encounter.Name} hits for {damage}.";
         panelLines =
         [
             $"A {encounter.Name} HOLDS YOU FAST.",
             $"PARTY HP {party.Health}/{party.MaxHealth}",
+            "ARROWS PICK A TARGET",
             "ENTER STRIKES BACK",
-            "R TRIES TO FLEE AGAIN",
         ];
 
         if (party.Health <= 0)
@@ -798,7 +851,8 @@ public sealed class NotimaGame : Game
             var sourceRect = new RectangleF(frame.X, frame.Y, frame.Width, frame.Height);
             var bounce = MathF.Sin((totalTime * 7.0f) + (i * 0.7f)) * 2.4f;
             var tile = GetEncounterTileDestination(boardOrigin, i % 2, i / 2);
-            var destination = new RectangleF(tile.X + 12.0f, tile.Y - 4.0f + bounce, 34.0f, 34.0f);
+            var offset = GetPartyAttackOffset(i);
+            var destination = new RectangleF(tile.X + 12.0f + offset.X, tile.Y - 4.0f + bounce + offset.Y, 34.0f, 34.0f);
             spriteBatch.Draw(whiteTexture, new RectangleF(destination.X + 8.0f, destination.Y + destination.Height - 5.0f, destination.Width - 16.0f, 3.0f), new Color(0, 0, 0, 64));
             spriteBatch.Draw(playerTexture, destination, sourceRect, partyColors[i], 0, Vector2.Zero);
         }
@@ -813,17 +867,29 @@ public sealed class NotimaGame : Game
             return;
         }
 
-        var enemyTile = GetEncounterTileDestination(boardOrigin, 3, 1);
-        spriteBatch.Draw(tileTexture, enemyTile, GetIsoTileSource(encounter.Name == "FEN LEECHES" ? 'F' : '*'), Color.White, 0, Vector2.Zero);
-        DrawEnemySprite(new Vector2(enemyTile.X + 6.0f, enemyTile.Y - 10.0f), 4);
+        for (var i = 0; i < encounter.Enemies.Count; i++)
+        {
+            var enemy = encounter.Enemies[i];
+            if (!enemy.IsAlive)
+            {
+                continue;
+            }
 
-        if (encounter.Name == "WOLF PACK")
-        {
-            DrawEnemySprite(new Vector2(GetEncounterTileDestination(boardOrigin, 3, 0).X + 10.0f, GetEncounterTileDestination(boardOrigin, 3, 0).Y - 6.0f), 3);
-        }
-        else if (encounter.Name == "ROAD BANDITS")
-        {
-            DrawEnemySprite(new Vector2(GetEncounterTileDestination(boardOrigin, 2, 2).X + 12.0f, GetEncounterTileDestination(boardOrigin, 2, 2).Y - 4.0f), 3);
+            var enemyTile = GetEncounterTileDestination(boardOrigin, enemy.BoardX, enemy.BoardY);
+            spriteBatch.Draw(tileTexture, enemyTile, GetIsoTileSource(encounter.Name == "FEN LEECHES" ? 'F' : '*'), Color.White, 0, Vector2.Zero);
+
+            if (i == selectedEnemyIndex && IsEnemyTargetable(i))
+            {
+                var highlight = new RectangleF(enemyTile.X + 8.0f, enemyTile.Y + 14.0f, enemyTile.Width - 16.0f, enemyTile.Height - 28.0f);
+                spriteBatch.Draw(whiteTexture, highlight, new Color(255, 212, 114, 42));
+                DrawFrame(highlight, new Color(255, 221, 132), 1);
+            }
+
+            var offset = GetEnemyAttackOffset(i);
+            DrawEnemySprite(
+                new Vector2(enemyTile.X + 6.0f + offset.X, enemyTile.Y - 10.0f + offset.Y),
+                i == selectedEnemyIndex ? 4 : 3,
+                enemy.Name);
         }
     }
 
@@ -834,17 +900,12 @@ public sealed class NotimaGame : Game
         return new RectangleF(screenX, screenY, IsoTileWidth * 0.68f, IsoTileHeight * 0.68f);
     }
 
-    private void DrawEnemySprite(Vector2 origin, int scale)
+    private void DrawEnemySprite(Vector2 origin, int scale, string enemyName)
     {
-        if (encounter is null)
-        {
-            return;
-        }
-
         var frameIndex = ((int)(totalTime * 6.0f)) % 2;
         var bob = MathF.Sin(totalTime * 5.0f) * 2.0f;
-        var palette = GetEnemyPalette(encounter.Name);
-        var frame = GetEnemyFrame(encounter.Name, frameIndex);
+        var palette = GetEnemyPalette(enemyName);
+        var frame = GetEnemyFrame(enemyName, frameIndex);
 
         for (var row = 0; row < frame.Length; row++)
         {
@@ -869,18 +930,18 @@ public sealed class NotimaGame : Game
         }
     }
 
-    private static Dictionary<char, Color> GetEnemyPalette(string encounterName)
+    private static Dictionary<char, Color> GetEnemyPalette(string enemyName)
     {
-        return encounterName switch
+        return enemyName switch
         {
-            "WOLF PACK" => new Dictionary<char, Color>
+            "WOLF" => new Dictionary<char, Color>
             {
                 ['A'] = new(92, 101, 122),
                 ['B'] = new(165, 179, 207),
                 ['C'] = new(232, 236, 255),
                 ['D'] = new(255, 118, 118),
             },
-            "FEN LEECHES" => new Dictionary<char, Color>
+            "LEECH" => new Dictionary<char, Color>
             {
                 ['A'] = new(88, 131, 84),
                 ['B'] = new(140, 203, 130),
@@ -897,20 +958,166 @@ public sealed class NotimaGame : Game
         };
     }
 
-    private static string[] GetEnemyFrame(string encounterName, int frameIndex)
+    private static string[] GetEnemyFrame(string enemyName, int frameIndex)
     {
-        return encounterName switch
+        return enemyName switch
         {
-            "WOLF PACK" => frameIndex == 0
+            "WOLF" => frameIndex == 0
                 ? ["....AA......", "...ABBA.....", "..ABBBAA....", ".ABBCCBA....", ".ABCCCCBA...", ".ABBDDDBA...", ".AABBBBAA...", ".A..AA..A..."]
                 : [".....AA.....", "....ABBA....", "...ABBBAA...", "..ABBCCBA...", ".ABCCCCBA...", ".ABBDDDBA...", ".AABBBBAA...", ".AA..AA.A..."],
-            "FEN LEECHES" => frameIndex == 0
+            "LEECH" => frameIndex == 0
                 ? ["....AA......", "..AABBAA....", ".ABBCCBBA...", ".ABCCCCBA...", ".ABCDDCBA...", ".ABBCCBBA...", "..AABBAA....", "....AA......"]
                 : ["...AA.......", "..AABBA.....", ".ABBCCBBA...", ".ABCCCCCBA..", ".ABCDDDCBA..", ".ABBCCBBA...", "..AABBA.....", "...AA......."],
             _ => frameIndex == 0
                 ? ["....DD......", "...DAAD.....", "..DABBAD....", ".DAABBACD...", ".DAABBBAD...", ".DABCCBAD...", ".DDAA.ADD...", "...D..D....."]
                 : [".....DD.....", "....DAAD....", "...DABBAD...", "..DAABBACD..", ".DAABBBAD...", ".DABCCBAD...", ".DDAA.ADD...", "..D....D...."],
         };
+    }
+
+    private void CycleEnemyTarget(int direction)
+    {
+        if (encounter is null)
+        {
+            return;
+        }
+
+        var legal = encounter.Enemies
+            .Select((enemy, index) => (enemy, index))
+            .Where(pair => pair.enemy.IsAlive && IsEnemyTargetable(pair.index))
+            .Select(pair => pair.index)
+            .ToList();
+
+        if (legal.Count == 0)
+        {
+            return;
+        }
+
+        var current = legal.IndexOf(selectedEnemyIndex);
+        if (current < 0)
+        {
+            selectedEnemyIndex = legal[0];
+        }
+        else
+        {
+            current = (current + direction + legal.Count) % legal.Count;
+            selectedEnemyIndex = legal[current];
+        }
+
+        statusLine = $"Targeting {encounter.Enemies[selectedEnemyIndex].Name}.";
+    }
+
+    private int GetDefaultSelectedEnemy()
+    {
+        if (encounter is null)
+        {
+            return 0;
+        }
+
+        for (var i = 0; i < encounter.Enemies.Count; i++)
+        {
+            if (encounter.Enemies[i].IsAlive && IsEnemyTargetable(i))
+            {
+                return i;
+            }
+        }
+
+        return encounter.Enemies.FindIndex(enemy => enemy.IsAlive);
+    }
+
+    private EnemyUnit? GetSelectedEnemy()
+    {
+        if (encounter is null || selectedEnemyIndex < 0 || selectedEnemyIndex >= encounter.Enemies.Count)
+        {
+            return null;
+        }
+
+        var enemy = encounter.Enemies[selectedEnemyIndex];
+        if (!enemy.IsAlive)
+        {
+            return null;
+        }
+
+        return enemy;
+    }
+
+    private bool IsEnemyTargetable(int enemyIndex)
+    {
+        if (encounter is null || enemyIndex < 0 || enemyIndex >= encounter.Enemies.Count)
+        {
+            return false;
+        }
+
+        var enemy = encounter.Enemies[enemyIndex];
+        if (!enemy.IsAlive)
+        {
+            return false;
+        }
+
+        var frontAlive = encounter.Enemies.Any(unit => unit.IsAlive && unit.BoardX >= 3);
+        return !frontAlive || enemy.BoardX >= 3;
+    }
+
+    private int? GetFrontAlivePartyIndex()
+    {
+        return party.Health > 0 ? 0 : null;
+    }
+
+    private int? GetBackAlivePartyIndex()
+    {
+        return party.Health > 0 ? 2 : null;
+    }
+
+    private Vector2 GetPartyAttackOffset(int partyIndex)
+    {
+        if (playerAttackAnimationTime <= 0.0f || partyIndex != attackingPartyMemberIndex)
+        {
+            if (enemyAttackAnimationTime > 0.0f && partyIndex == attackedPartyMemberIndex)
+            {
+                var t = enemyAttackAnimationTime / 0.24f;
+                return new Vector2(-10.0f * t, -4.0f * t);
+            }
+
+            return Vector2.Zero;
+        }
+
+        var progress = 1.0f - (playerAttackAnimationTime / 0.24f);
+        var amount = progress < 0.5f ? progress * 2.0f : (1.0f - progress) * 2.0f;
+        return new Vector2(14.0f * amount, -6.0f * amount);
+    }
+
+    private Vector2 GetEnemyAttackOffset(int enemyIndex)
+    {
+        if (enemyAttackAnimationTime <= 0.0f || enemyIndex != attackingEnemyIndex)
+        {
+            return Vector2.Zero;
+        }
+
+        var progress = 1.0f - (enemyAttackAnimationTime / 0.24f);
+        var amount = progress < 0.5f ? progress * 2.0f : (1.0f - progress) * 2.0f;
+        return new Vector2(-14.0f * amount, 6.0f * amount);
+    }
+
+    private void HandleEncounterVictory()
+    {
+        if (encounter is null)
+        {
+            return;
+        }
+
+        party.Gold += encounter.RewardGold;
+        party.Food += encounter.RewardFood;
+        statusLine = $"{encounter.Name} defeated. Gold +{encounter.RewardGold}, Food +{encounter.RewardFood}.";
+        OpenDialog(
+            "VICTORY",
+            $"{encounter.Name} FALLS.",
+            $"GOLD +{encounter.RewardGold}",
+            $"FOOD +{encounter.RewardFood}",
+            "ENTER CONTINUES"
+        );
+        encounter = null;
+        selectedEnemyIndex = 0;
+        playerAttackAnimationTime = 0.0f;
+        enemyAttackAnimationTime = 0.0f;
     }
 
     private void DrawWrappedText(string text, Vector2 position, int scale, int maxWidth, Color color)
@@ -1100,7 +1307,68 @@ internal sealed class PartyState
     public int Steps { get; set; }
 }
 
-internal sealed class EncounterState(string name, int maxHealth, int attackMin, int attackMax, int rewardGold, int rewardFood)
+internal sealed class EncounterState
+{
+    public string Name { get; init; } = string.Empty;
+
+    public List<EnemyUnit> Enemies { get; init; } = [];
+
+    public int RewardGold { get; init; }
+
+    public int RewardFood { get; init; }
+
+    public int AliveCount => Enemies.Count(enemy => enemy.IsAlive);
+
+    public static EncounterState CreateWolfPack()
+    {
+        return new EncounterState
+        {
+            Name = "WOLF PACK",
+            RewardGold = 11,
+            RewardFood = 4,
+            Enemies =
+            [
+                new EnemyUnit("WOLF", 8, 3, 6, 3, 0),
+                new EnemyUnit("WOLF", 8, 3, 6, 3, 1),
+                new EnemyUnit("WOLF", 7, 2, 5, 2, 0),
+            ],
+        };
+    }
+
+    public static EncounterState CreateFenLeeches()
+    {
+        return new EncounterState
+        {
+            Name = "FEN LEECHES",
+            RewardGold = 9,
+            RewardFood = 6,
+            Enemies =
+            [
+                new EnemyUnit("LEECH", 7, 2, 5, 3, 0),
+                new EnemyUnit("LEECH", 7, 2, 5, 3, 1),
+                new EnemyUnit("LEECH", 6, 2, 4, 2, 1),
+            ],
+        };
+    }
+
+    public static EncounterState CreateRoadBandits()
+    {
+        return new EncounterState
+        {
+            Name = "ROAD BANDITS",
+            RewardGold = 12,
+            RewardFood = 3,
+            Enemies =
+            [
+                new EnemyUnit("BANDIT", 9, 2, 5, 3, 0),
+                new EnemyUnit("BANDIT", 9, 2, 5, 3, 1),
+                new EnemyUnit("BANDIT", 7, 2, 4, 2, 2),
+            ],
+        };
+    }
+}
+
+internal sealed class EnemyUnit(string name, int maxHealth, int attackMin, int attackMax, int boardX, int boardY)
 {
     public string Name { get; } = name;
 
@@ -1112,9 +1380,11 @@ internal sealed class EncounterState(string name, int maxHealth, int attackMin, 
 
     public int AttackMax { get; } = attackMax;
 
-    public int RewardGold { get; } = rewardGold;
+    public int BoardX { get; } = boardX;
 
-    public int RewardFood { get; } = rewardFood;
+    public int BoardY { get; } = boardY;
+
+    public bool IsAlive => Health > 0;
 }
 
 internal enum UiMode
