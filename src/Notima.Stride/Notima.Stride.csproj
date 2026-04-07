@@ -12,6 +12,10 @@
 
   <ItemGroup>
     <None Include="..\..\assets\data\overworld.json" Link="Content\Maps\overworld.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\original\notima_isometric_hero.png" Link="Content\Art\notima_isometric_hero.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\original\notima_isometric_tiles.png" Link="Content\Art\notima_isometric_tiles.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\original\notima_isometric_hero.rgba" Link="Content\Art\notima_isometric_hero.rgba" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\original\notima_isometric_tiles.rgba" Link="Content\Art\notima_isometric_tiles.rgba" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\public-domain\julia-player-cc0.png" Link="Content\Art\julia-player-cc0.png" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\public-domain\overworld-tiles-cc0.png" Link="Content\Art\overworld-tiles-cc0.png" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\public-domain\julia-player-cc0.rgba" Link="Content\Art\julia-player-cc0.rgba" CopyToOutputDirectory="PreserveNewest" />

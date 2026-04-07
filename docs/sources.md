@@ -1,6 +1,15 @@
 # Source Notes
 
-This repo keeps only clearly public-domain source material in scope for the first art/data pass.
+This repo keeps clearly licensed reference material in scope for expansion, while the current runtime hero and tile sheets are original repo-owned generated assets.
+
+## Current runtime art
+
+- `assets/original/notima_isometric_hero.png`
+- `assets/original/notima_isometric_tiles.png`
+- generated locally by `tools/generate_original_art.py`
+- matching raw runtime mirrors:
+  - `assets/original/notima_isometric_hero.rgba`
+  - `assets/original/notima_isometric_tiles.rgba`
 
 ## Public-domain art references
 

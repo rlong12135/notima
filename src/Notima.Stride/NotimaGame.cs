@@ -103,8 +103,8 @@ public sealed class NotimaGame : Game
 
         spriteBatch = new SpriteBatch(GraphicsDevice);
         whiteTexture = GraphicsDevice.GetSharedWhiteTexture();
-        tileTexture = LoadRgbaTexture("Content/Art/isometric_tiles_dezrasdragons.rgba", 307, 298);
-        playerTexture = LoadRgbaTexture("Content/Art/isometric_hero_dezrasdragons.rgba", 959, 496);
+        tileTexture = LoadRgbaTexture("Content/Art/notima_isometric_tiles.rgba", 32, 264);
+        playerTexture = LoadRgbaTexture("Content/Art/notima_isometric_hero.rgba", 99, 132);
         LoadMapFromDisk();
         UpdateWindowTitle();
     }
