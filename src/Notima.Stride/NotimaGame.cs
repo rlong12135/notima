@@ -263,12 +263,11 @@ public sealed class NotimaGame : Game
         party = new PartyState
         {
             Level = 1,
-            MaxHealth = 24,
-            Health = 24,
             Food = 120,
             Gold = 30,
             Steps = 0
         };
+        party.ResetMembers(6);
         encounter = null;
         panelTitle = string.Empty;
         panelLines.Clear();
@@ -307,7 +306,7 @@ public sealed class NotimaGame : Game
             party.Food = Math.Max(0, party.Food - 1);
             if (party.Food == 0)
             {
-                party.Health = Math.Max(1, party.Health - 1);
+                DamageRandomAlivePartyMember(1, allowDefeat: false);
             }
         }
 
@@ -361,7 +360,7 @@ public sealed class NotimaGame : Game
             return;
         }
 
-        var attackerIndex = GetFrontAlivePartyIndex() ?? 0;
+        var attackerIndex = GetFrontAlivePartyIndex() ?? GetBackAlivePartyIndex() ?? 0;
         attackingPartyMemberIndex = attackerIndex;
         playerAttackAnimationTime = 0.24f;
 
@@ -387,7 +386,7 @@ public sealed class NotimaGame : Game
         attackingEnemyIndex = enemy is null ? -1 : encounter.Enemies.IndexOf(enemy);
         enemyAttackAnimationTime = enemy is null ? 0.0f : 0.24f;
 
-        var targetPartyIndex = GetFrontAlivePartyIndex() ?? GetBackAlivePartyIndex() ?? 0;
+        var targetPartyIndex = GetRandomAlivePartyIndex(preferFront: true) ?? 0;
         attackedPartyMemberIndex = targetPartyIndex;
 
         var enemyDamageBase = enemy is null ? 1 : random.Next(enemy.AttackMin, enemy.AttackMax + 1);
@@ -397,17 +396,17 @@ public sealed class NotimaGame : Game
             enemyDamage = Math.Max(1, enemyDamage - 2);
         }
 
-        party.Health = Math.Max(0, party.Health - enemyDamage);
+        DamagePartyMember(targetPartyIndex, enemyDamage);
         statusLine = $"You hit {target.Name} for {playerDamage}. {enemy?.Name ?? encounter.Name} answers for {enemyDamage}.";
         panelLines =
         [
             $"{target.Name} HP {target.Health}/{target.MaxHealth}",
-            $"PARTY HP {party.Health}/{party.MaxHealth}",
+            $"PARTY HP {party.TotalHealth}/{party.MaxTotalHealth}",
             "ARROWS PICK A TARGET",
             "ENTER ATTACKS  R RETREATS",
         ];
 
-        if (party.Health <= 0)
+        if (party.TotalHealth <= 0)
         {
             HandleDefeat();
         }
@@ -433,20 +432,21 @@ public sealed class NotimaGame : Game
 
         var enemy = encounter.Enemies.FirstOrDefault(enemyUnit => enemyUnit.IsAlive);
         var damage = Math.Max(1, (enemy is null ? 2 : random.Next(enemy.AttackMin, enemy.AttackMax + 1)) - party.Level);
-        party.Health = Math.Max(0, party.Health - damage);
+        var targetPartyIndex = GetRandomAlivePartyIndex(preferFront: true) ?? 0;
+        DamagePartyMember(targetPartyIndex, damage);
         attackingEnemyIndex = enemy is null ? -1 : encounter.Enemies.IndexOf(enemy);
-        attackedPartyMemberIndex = GetFrontAlivePartyIndex() ?? GetBackAlivePartyIndex() ?? 0;
+        attackedPartyMemberIndex = targetPartyIndex;
         enemyAttackAnimationTime = 0.24f;
         statusLine = $"Retreat failed. The {encounter.Name} hits for {damage}.";
         panelLines =
         [
             $"A {encounter.Name} HOLDS YOU FAST.",
-            $"PARTY HP {party.Health}/{party.MaxHealth}",
+            $"PARTY HP {party.TotalHealth}/{party.MaxTotalHealth}",
             "ARROWS PICK A TARGET",
             "ENTER STRIKES BACK",
         ];
 
-        if (party.Health <= 0)
+        if (party.TotalHealth <= 0)
         {
             HandleDefeat();
         }
@@ -454,7 +454,7 @@ public sealed class NotimaGame : Game
 
     private void HandleDefeat()
     {
-        party.Health = party.MaxHealth;
+        party.ResetMembers(6 + ((party.Level - 1) * 2));
         party.Gold = Math.Max(0, party.Gold - 12);
         playerCell = new GridPoint(map.Start.X, map.Start.Y);
         encounter = null;
@@ -476,7 +476,7 @@ public sealed class NotimaGame : Game
             case 'T':
             case 'H':
             case 'C':
-                party.Health = party.MaxHealth;
+                HealAllPartyMembers();
                 party.Food += 18;
                 OpenDialog(
                     symbol switch
@@ -497,13 +497,13 @@ public sealed class NotimaGame : Game
                 {
                     party.Gold -= 30;
                     party.Level++;
-                    party.MaxHealth += 6;
-                    party.Health = party.MaxHealth;
+                    RaisePartyMaxHealth(2);
+                    HealAllPartyMembers();
                     OpenDialog(
                         "KEEP",
                         "THE LORD'S CAPTAIN TRAINS YOU.",
                         $"LEVEL IS NOW {party.Level}.",
-                        "MAX HP +6",
+                        "EACH MEMBER HP +2",
                         "ENTER CONTINUES"
                     );
                     statusLine = "Training at the keep hardens the party.";
@@ -524,12 +524,12 @@ public sealed class NotimaGame : Game
             case 'S':
                 if (visitedLandmarks.Add(playerCell))
                 {
-                    party.MaxHealth += 4;
-                    party.Health = party.MaxHealth;
+                    RaisePartyMaxHealth(1);
+                    HealAllPartyMembers();
                     OpenDialog(
                         "SHRINE",
                         "A QUIET BLESSING FALLS.",
-                        "MAX HP +4",
+                        "EACH MEMBER HP +1",
                         "THE PARTY IS HEALED.",
                         "ENTER CONTINUES"
                     );
@@ -756,7 +756,7 @@ public sealed class NotimaGame : Game
         DrawText("NOTIMA", new Vector2(HudX + 22, 46), new Color(255, 234, 160), 3);
         DrawText(map.Name, new Vector2(HudX + 22, 88), new Color(188, 207, 255), 2);
 
-        DrawText($"HP {party.Health}/{party.MaxHealth}", new Vector2(HudX + 22, 138), party.Health > (party.MaxHealth / 2) ? new Color(155, 241, 163) : new Color(255, 179, 179), 2);
+        DrawText($"HP {party.TotalHealth}/{party.MaxTotalHealth}", new Vector2(HudX + 22, 138), party.TotalHealth > (party.MaxTotalHealth / 2) ? new Color(155, 241, 163) : new Color(255, 179, 179), 2);
         DrawText($"FOOD {party.Food}", new Vector2(HudX + 22, 168), new Color(255, 230, 155), 2);
         DrawText($"GOLD {party.Gold}", new Vector2(HudX + 22, 198), new Color(255, 219, 122), 2);
         DrawText($"LVL {party.Level}", new Vector2(HudX + 22, 228), new Color(191, 220, 255), 2);
@@ -802,22 +802,17 @@ public sealed class NotimaGame : Game
 
     private void DrawPartyBanner(Vector2 origin)
     {
-        var colors = new[]
+        for (var i = 0; i < party.Members.Count; i++)
         {
-            Color.White,
-            new Color(181, 214, 255),
-            new Color(255, 204, 214),
-            new Color(255, 232, 174),
-        };
-
-        for (var i = 0; i < colors.Length; i++)
-        {
+            var member = party.Members[i];
             var frame = GetPlayerSourceFrameFor(i == 0 ? facing : Direction.Down, ((int)(totalTime * 6.0f) + i) % 3);
             var sourceRect = new RectangleF(frame.X, frame.Y, frame.Width, frame.Height);
             var bounce = MathF.Sin((totalTime * 5.0f) + i) * 2.0f;
             var destination = new RectangleF(origin.X + (i * 42.0f), origin.Y + bounce, 30.0f, 30.0f);
             spriteBatch.Draw(whiteTexture, new RectangleF(destination.X + 4.0f, destination.Y + destination.Height - 3.0f, destination.Width - 8.0f, 2.0f), new Color(0, 0, 0, 56));
-            spriteBatch.Draw(playerTexture, destination, sourceRect, colors[i], 0, Vector2.Zero);
+            var tint = member.IsAlive ? member.Tint : new Color(84, 92, 112);
+            spriteBatch.Draw(playerTexture, destination, sourceRect, tint, 0, Vector2.Zero);
+            DrawText($"{member.Health}/{member.MaxHealth}", new Vector2(destination.X - 2.0f, destination.Bottom + 6.0f), member.IsAlive ? new Color(220, 230, 255) : new Color(130, 136, 148), 1);
         }
     }
 
@@ -837,24 +832,23 @@ public sealed class NotimaGame : Game
             }
         }
 
-        var partyColors = new[]
+        for (var i = 0; i < party.Members.Count; i++)
         {
-            Color.White,
-            new Color(181, 214, 255),
-            new Color(255, 204, 214),
-            new Color(255, 232, 174),
-        };
-
-        for (var i = 0; i < partyColors.Length; i++)
-        {
+            var member = party.Members[i];
             var frame = GetPlayerSourceFrameFor(i == 0 ? facing : Direction.Right, ((int)(totalTime * 7.0f) + i) % 3);
             var sourceRect = new RectangleF(frame.X, frame.Y, frame.Width, frame.Height);
             var bounce = MathF.Sin((totalTime * 7.0f) + (i * 0.7f)) * 2.4f;
             var tile = GetEncounterTileDestination(boardOrigin, i % 2, i / 2);
             var offset = GetPartyAttackOffset(i);
             var destination = new RectangleF(tile.X + 12.0f + offset.X, tile.Y - 4.0f + bounce + offset.Y, 34.0f, 34.0f);
-            spriteBatch.Draw(whiteTexture, new RectangleF(destination.X + 8.0f, destination.Y + destination.Height - 5.0f, destination.Width - 16.0f, 3.0f), new Color(0, 0, 0, 64));
-            spriteBatch.Draw(playerTexture, destination, sourceRect, partyColors[i], 0, Vector2.Zero);
+            var shadowColor = member.IsAlive ? new Color(0, 0, 0, 64) : new Color(0, 0, 0, 24);
+            spriteBatch.Draw(whiteTexture, new RectangleF(destination.X + 8.0f, destination.Y + destination.Height - 5.0f, destination.Width - 16.0f, 3.0f), shadowColor);
+            var tint = member.IsAlive ? member.Tint : new Color(78, 84, 98);
+            spriteBatch.Draw(playerTexture, destination, sourceRect, tint, 0, Vector2.Zero);
+            if (!member.IsAlive)
+            {
+                spriteBatch.Draw(whiteTexture, new RectangleF(destination.X + 6.0f, destination.Y + 16.0f, destination.Width - 12.0f, 2.0f), new Color(176, 82, 82));
+            }
         }
 
         DrawEnemyBoardPresence(boardOrigin);
@@ -1059,12 +1053,50 @@ public sealed class NotimaGame : Game
 
     private int? GetFrontAlivePartyIndex()
     {
-        return party.Health > 0 ? 0 : null;
+        for (var i = 0; i < Math.Min(2, party.Members.Count); i++)
+        {
+            if (party.Members[i].IsAlive)
+            {
+                return i;
+            }
+        }
+
+        return null;
     }
 
     private int? GetBackAlivePartyIndex()
     {
-        return party.Health > 0 ? 2 : null;
+        for (var i = 2; i < party.Members.Count; i++)
+        {
+            if (party.Members[i].IsAlive)
+            {
+                return i;
+            }
+        }
+
+        return null;
+    }
+
+    private int? GetRandomAlivePartyIndex(bool preferFront)
+    {
+        var front = party.Members
+            .Select((member, index) => (member, index))
+            .Where(pair => pair.index < 2 && pair.member.IsAlive)
+            .Select(pair => pair.index)
+            .ToList();
+        var back = party.Members
+            .Select((member, index) => (member, index))
+            .Where(pair => pair.index >= 2 && pair.member.IsAlive)
+            .Select(pair => pair.index)
+            .ToList();
+
+        var preferred = preferFront && front.Count > 0 ? front : back.Count > 0 ? back : front;
+        if (preferred.Count == 0)
+        {
+            return null;
+        }
+
+        return preferred[random.Next(preferred.Count)];
     }
 
     private Vector2 GetPartyAttackOffset(int partyIndex)
@@ -1118,6 +1150,51 @@ public sealed class NotimaGame : Game
         selectedEnemyIndex = 0;
         playerAttackAnimationTime = 0.0f;
         enemyAttackAnimationTime = 0.0f;
+    }
+
+    private void DamageRandomAlivePartyMember(int damage, bool allowDefeat)
+    {
+        var targetIndex = GetRandomAlivePartyIndex(preferFront: false);
+        if (targetIndex is null)
+        {
+            return;
+        }
+
+        var member = party.Members[targetIndex.Value];
+        var floor = allowDefeat ? 0 : 1;
+        member.Health = Math.Max(floor, member.Health - damage);
+    }
+
+    private void DamagePartyMember(int memberIndex, int damage)
+    {
+        if (memberIndex < 0 || memberIndex >= party.Members.Count)
+        {
+            return;
+        }
+
+        var member = party.Members[memberIndex];
+        if (!member.IsAlive)
+        {
+            return;
+        }
+
+        member.Health = Math.Max(0, member.Health - damage);
+    }
+
+    private void HealAllPartyMembers()
+    {
+        foreach (var member in party.Members)
+        {
+            member.Health = member.MaxHealth;
+        }
+    }
+
+    private void RaisePartyMaxHealth(int amount)
+    {
+        foreach (var member in party.Members)
+        {
+            member.MaxHealth += amount;
+        }
     }
 
     private void DrawWrappedText(string text, Vector2 position, int scale, int maxWidth, Color color)
@@ -1222,7 +1299,7 @@ public sealed class NotimaGame : Game
             UiMode.Dialog => panelTitle,
             _ => "OVERWORLD"
         };
-        Window.Title = $"notima | {modeText} | HP {party.Health}/{party.MaxHealth} | GOLD {party.Gold} | FOOD {party.Food}";
+        Window.Title = $"notima | {modeText} | HP {party.TotalHealth}/{party.MaxTotalHealth} | GOLD {party.Gold} | FOOD {party.Food}";
     }
 
     private static RectangleF GetIsoTileSource(char symbol)
@@ -1296,15 +1373,48 @@ internal sealed class PartyState
 {
     public int Level { get; set; }
 
-    public int Health { get; set; }
-
-    public int MaxHealth { get; set; }
-
     public int Gold { get; set; }
 
     public int Food { get; set; }
 
     public int Steps { get; set; }
+
+    public List<PartyMember> Members { get; } = [];
+
+    public int TotalHealth => Members.Sum(member => member.Health);
+
+    public int MaxTotalHealth => Members.Sum(member => member.MaxHealth);
+
+    public void ResetMembers(int memberHealth)
+    {
+        if (Members.Count == 0)
+        {
+            Members.Add(new PartyMember("AVA", new Color(255, 255, 255), memberHealth));
+            Members.Add(new PartyMember("BRI", new Color(181, 214, 255), memberHealth));
+            Members.Add(new PartyMember("CYR", new Color(255, 204, 214), memberHealth));
+            Members.Add(new PartyMember("DAS", new Color(255, 232, 174), memberHealth));
+            return;
+        }
+
+        foreach (var member in Members)
+        {
+            member.MaxHealth = memberHealth;
+            member.Health = memberHealth;
+        }
+    }
+}
+
+internal sealed class PartyMember(string name, Color tint, int maxHealth)
+{
+    public string Name { get; } = name;
+
+    public Color Tint { get; } = tint;
+
+    public int MaxHealth { get; set; } = maxHealth;
+
+    public int Health { get; set; } = maxHealth;
+
+    public bool IsAlive => Health > 0;
 }
 
 internal sealed class EncounterState
