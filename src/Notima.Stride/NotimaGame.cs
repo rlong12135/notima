@@ -28,7 +28,25 @@ public sealed class NotimaGame : Game
     private const int PanelY = 308;
     private const int PanelWidth = 388;
     private const int PanelHeight = 230;
-    private const int EncounterPanelHeight = 372;
+    private const int EncounterPanelHeight = 316;
+    private static readonly Dictionary<string, EquipmentDefinition> EquipmentCatalog = new()
+    {
+        ["club"] = new("club", "CLUB", EquipmentSlot.Weapon, 1, 0, 8, 0, 1),
+        ["dagger"] = new("dagger", "DAGGER", EquipmentSlot.Weapon, 2, 0, 12, 0, 1),
+        ["mace"] = new("mace", "MACE", EquipmentSlot.Weapon, 3, 0, 18, 1, 2),
+        ["spear"] = new("spear", "SPEAR", EquipmentSlot.Weapon, 4, 0, 26, 1, 3),
+        ["shortsword"] = new("shortsword", "SHORTSWORD", EquipmentSlot.Weapon, 5, 0, 38, 2, 4),
+        ["longsword"] = new("longsword", "LONGSWORD", EquipmentSlot.Weapon, 6, 0, 54, 3, 5),
+        ["battleaxe"] = new("battleaxe", "BATTLEAXE", EquipmentSlot.Weapon, 7, 0, 76, 4, 6),
+        ["padded"] = new("padded", "PADDED ARMOR", EquipmentSlot.Armor, 0, 1, 10, 0, 1),
+        ["leather"] = new("leather", "LEATHER ARMOR", EquipmentSlot.Armor, 0, 2, 16, 0, 1),
+        ["hide"] = new("hide", "HIDE ARMOR", EquipmentSlot.Armor, 0, 3, 24, 1, 2),
+        ["chain-shirt"] = new("chain-shirt", "CHAIN SHIRT", EquipmentSlot.Armor, 0, 4, 34, 2, 3),
+        ["scale-mail"] = new("scale-mail", "SCALE MAIL", EquipmentSlot.Armor, 0, 5, 48, 3, 4),
+        ["chain-mail"] = new("chain-mail", "CHAIN MAIL", EquipmentSlot.Armor, 0, 6, 68, 4, 5),
+    };
+    private static readonly string[] WeaponProgression = ["club", "dagger", "mace", "spear", "shortsword", "longsword", "battleaxe"];
+    private static readonly string[] ArmorProgression = ["padded", "leather", "hide", "chain-shirt", "scale-mail", "chain-mail"];
 
     private readonly Dictionary<char, TileDefinition> tileDefinitions = new()
     {
@@ -89,6 +107,7 @@ public sealed class NotimaGame : Game
     private float totalTime;
     private float playerAttackAnimationTime;
     private float enemyAttackAnimationTime;
+    private float defeatPortalTimer;
     private int selectedEnemyIndex;
     private int attackingPartyMemberIndex;
     private int attackingEnemyIndex = -1;
@@ -160,6 +179,18 @@ public sealed class NotimaGame : Game
         moveCooldown = MathF.Max(0.0f, moveCooldown - dt);
         playerAttackAnimationTime = MathF.Max(0.0f, playerAttackAnimationTime - dt);
         enemyAttackAnimationTime = MathF.Max(0.0f, enemyAttackAnimationTime - dt);
+        if (defeatPortalTimer > 0.0f)
+        {
+            defeatPortalTimer = MathF.Max(0.0f, defeatPortalTimer - dt);
+            if (defeatPortalTimer <= 0.0f)
+            {
+                uiMode = UiMode.Overworld;
+                panelTitle = string.Empty;
+                panelLines.Clear();
+            }
+            UpdateWindowTitle();
+            return;
+        }
 
         HandleInput();
         UpdateWindowTitle();
@@ -175,6 +206,10 @@ public sealed class NotimaGame : Game
         DrawHud();
         DrawMinimapOverlay();
         DrawPanels();
+        if (defeatPortalTimer > 0.0f)
+        {
+            DrawDefeatPortalOverlay();
+        }
         spriteBatch.End();
     }
 
@@ -490,12 +525,11 @@ public sealed class NotimaGame : Game
             Gold = 30,
             Mana = 12,
             MaxMana = 12,
-            WeaponTier = 0,
-            ArmorTier = 0,
             Keys = 0,
             Steps = 0
         };
         party.ResetMembers(6);
+        EnsurePartyEquipmentState();
         encounter = null;
         townMenu = null;
         dungeon = null;
@@ -713,9 +747,11 @@ public sealed class NotimaGame : Game
             return;
         }
 
-        var enemy = encounter.Enemies.FirstOrDefault(enemyUnit => enemyUnit.IsAlive);
-        var damage = Math.Max(1, (enemy is null ? 2 : random.Next(enemy.AttackMin, enemy.AttackMax + 1)) - party.Level - party.ArmorTier);
         var targetPartyIndex = GetRandomAlivePartyIndex(preferFront: true) ?? 0;
+        var enemy = encounter.Enemies.FirstOrDefault(enemyUnit => enemyUnit.IsAlive);
+        var targetMember = party.Members[targetPartyIndex];
+        var defense = GetArmorDefense(targetMember);
+        var damage = Math.Max(1, (enemy is null ? 2 : random.Next(enemy.AttackMin, enemy.AttackMax + 1)) - Math.Max(0, party.Level / 2) - defense);
         DamagePartyMember(targetPartyIndex, damage);
         attackingEnemyIndex = enemy is null ? -1 : encounter.Enemies.IndexOf(enemy);
         attackedPartyMemberIndex = targetPartyIndex;
@@ -765,7 +801,8 @@ public sealed class NotimaGame : Game
             return;
         }
 
-        var playerDamage = random.Next(4, 9) + party.Level + (party.WeaponTier * 2);
+        var weapon = GetEquippedWeapon(party.Members[partyIndex]);
+        var playerDamage = random.Next(weapon.Attack, weapon.Attack + 4) + party.Level;
         if (partyIndex >= 2)
         {
             playerDamage = Math.Max(2, playerDamage - 2);
@@ -801,6 +838,7 @@ public sealed class NotimaGame : Game
         var targetPartyIndex = GetRandomAlivePartyIndex(preferFront: true) ?? 0;
         attackedPartyMemberIndex = targetPartyIndex;
 
+        var targetMember = party.Members[targetPartyIndex];
         var wardReduction = party.WardCharges > 0 ? 2 : 0;
         if (party.WardCharges > 0)
         {
@@ -813,7 +851,7 @@ public sealed class NotimaGame : Game
             return;
         }
         var enemyDamageBase = random.Next(enemy.AttackMin, enemy.AttackMax + 1);
-        var enemyDamage = Math.Max(1, enemyDamageBase - (party.Level / 2) - party.ArmorTier - wardReduction);
+        var enemyDamage = Math.Max(1, enemyDamageBase - (party.Level / 2) - GetArmorDefense(targetMember) - wardReduction);
         if (targetPartyIndex >= 2 && GetFrontAlivePartyIndex() is not null)
         {
             enemyDamage = Math.Max(1, enemyDamage - 2);
@@ -833,13 +871,11 @@ public sealed class NotimaGame : Game
         dungeon = null;
         townMenu = null;
         encounter = null;
-        OpenDialog(
-            "DEFEAT",
-            "THE PARTY COLLAPSES.",
-            "A STRANGER BRINGS YOU BACK",
-            "TO THE STARTING ROAD.",
-            "ENTER RISES AGAIN"
-        );
+        panelTitle = string.Empty;
+        panelLines.Clear();
+        uiMode = UiMode.Overworld;
+        defeatPortalTimer = 5.0f;
+        audioPlayer?.PlayPortal();
         statusLine = "The party was defeated and dragged back to safety.";
     }
 
@@ -962,28 +998,38 @@ public sealed class NotimaGame : Game
                 statusLine = "You buy dried meat and hard bread.";
                 break;
             case "FORGE WEAPON +1":
-                var weaponCost = GetWeaponUpgradeCost();
-                if (party.Gold < weaponCost)
+                var nextWeapon = GetNextShopItem(EquipmentSlot.Weapon);
+                if (nextWeapon is null)
                 {
-                    statusLine = $"{GetNextWeaponName()} costs {weaponCost} gold.";
+                    statusLine = "No finer weapons are for sale here.";
                     return;
                 }
 
-                party.Gold -= weaponCost;
-                party.WeaponTier++;
-                statusLine = $"The smith equips {GetWeaponName()}.";
+                if (party.Gold < nextWeapon.Cost)
+                {
+                    statusLine = $"{nextWeapon.Name} costs {nextWeapon.Cost} gold.";
+                    return;
+                }
+
+                party.Gold -= nextWeapon.Cost;
+                statusLine = GrantEquipment(nextWeapon.Id, "The smith equips");
                 break;
             case "BUY ARMOR +1":
-                var armorCost = GetArmorUpgradeCost();
-                if (party.Gold < armorCost)
+                var nextArmor = GetNextShopItem(EquipmentSlot.Armor);
+                if (nextArmor is null)
                 {
-                    statusLine = $"{GetNextArmorName()} costs {armorCost} gold.";
+                    statusLine = "No sturdier armor is available.";
                     return;
                 }
 
-                party.Gold -= armorCost;
-                party.ArmorTier++;
-                statusLine = $"The outfitter fits {GetArmorName()}.";
+                if (party.Gold < nextArmor.Cost)
+                {
+                    statusLine = $"{nextArmor.Name} costs {nextArmor.Cost} gold.";
+                    return;
+                }
+
+                party.Gold -= nextArmor.Cost;
+                statusLine = GrantEquipment(nextArmor.Id, "The outfitter fits");
                 break;
             default:
                 CloseTownMenu("You step back onto the road.");
@@ -1002,16 +1048,21 @@ public sealed class NotimaGame : Game
                 ExecuteTownOption(choice);
                 return;
             case "BUY ARMOR +1":
-                var armorCost = GetArmorUpgradeCost();
-                if (party.Gold < armorCost)
+                var nextArmor = GetNextShopItem(EquipmentSlot.Armor);
+                if (nextArmor is null)
                 {
-                    statusLine = $"{GetNextArmorName()} costs {armorCost} gold.";
+                    statusLine = "The harbor has no better armor on hand.";
                     return;
                 }
 
-                party.Gold -= armorCost;
-                party.ArmorTier++;
-                CloseTownMenu($"A sea captain sells you {GetArmorName()}.");
+                if (party.Gold < nextArmor.Cost)
+                {
+                    statusLine = $"{nextArmor.Name} costs {nextArmor.Cost} gold.";
+                    return;
+                }
+
+                party.Gold -= nextArmor.Cost;
+                CloseTownMenu(GrantEquipment(nextArmor.Id, "A sea captain sells you"));
                 return;
             default:
                 CloseTownMenu("You leave the harbor behind.");
@@ -1130,6 +1181,7 @@ public sealed class NotimaGame : Game
                 statusLine = $"You descend to dungeon level {dungeon.Level}.";
                 break;
             case 'G':
+                audioPlayer?.PlayChest();
                 CollectDungeonTreasure();
                 break;
             case 'L':
@@ -1203,7 +1255,7 @@ public sealed class NotimaGame : Game
             drops.Add($"{food} food");
         }
 
-        if (TryAwardEquipmentDrop(out var itemDrop))
+        if (TryAwardEquipmentDrop(dungeon.Level + 1, out var itemDrop))
         {
             drops.Add(itemDrop);
         }
@@ -1978,7 +2030,9 @@ public sealed class NotimaGame : Game
                 var scale = Math.Clamp(1.0f / localForward, 0.18f, 1.0f);
                 var height = 42.0f + (viewport.Height * 0.26f * scale);
                 var width = 32.0f + (viewport.Width * 0.08f * scale);
-                var baseY = floorBottom - (viewport.Height * (0.1f + (0.42f / Math.Max(0.6f, localForward))));
+                var depthT = Math.Clamp((localForward - 0.45f) / 5.55f, 0.0f, 1.0f);
+                var floorPerspective = 1.0f - MathF.Sqrt(depthT);
+                var baseY = horizonY + ((floorBottom - horizonY) * floorPerspective) - 2.0f;
                 var dest = new RectangleF(screenX - (width * 0.5f), baseY - height, width, height);
                 DrawDungeonProjectedFeature(symbol, dest, depth);
             }
@@ -2198,7 +2252,8 @@ public sealed class NotimaGame : Game
         var scale = 1.0f - (depth * 0.16f);
         var width = portal.Width * MathF.Max(0.56f, 0.88f * scale);
         var height = portal.Height * MathF.Max(0.64f, 0.98f * scale);
-        var dest = new RectangleF(portal.Center.X - (width * 0.5f), portal.Bottom - height - 2.0f, width, height);
+        var floorBias = isDungeonView && symbol is '<' or '>' or 'G' ? portal.Height * 0.18f : 0.0f;
+        var dest = new RectangleF(portal.Center.X - (width * 0.5f), portal.Bottom + floorBias - height - 2.0f, width, height);
 
         if (symbol is 'M' or 'B' || (!isDungeonView && symbol is '*'))
         {
@@ -2411,7 +2466,8 @@ public sealed class NotimaGame : Game
 
     private void DrawDungeonProjectedFeature(char symbol, RectangleF dest, int depth)
     {
-        var shadow = new RectangleF(dest.X + (dest.Width * 0.14f), dest.Bottom - 6.0f, dest.Width * 0.72f, 4.0f);
+        var floorY = dest.Bottom - 2.0f;
+        var shadow = new RectangleF(dest.X + (dest.Width * 0.14f), floorY - 4.0f, dest.Width * 0.72f, 4.0f);
         DrawPanel(shadow.X, shadow.Y, shadow.Width, shadow.Height, new Color(0, 0, 0, 56));
 
         switch (symbol)
@@ -2419,22 +2475,26 @@ public sealed class NotimaGame : Game
             case '<':
                 for (var i = 0; i < 4; i++)
                 {
-                    var step = new RectangleF(dest.X + (dest.Width * (0.18f + (i * 0.08f))), dest.Bottom - (dest.Height * (0.18f + (i * 0.1f))), dest.Width * (0.64f - (i * 0.1f)), dest.Height * 0.08f);
+                    var stepHeight = dest.Height * 0.08f;
+                    var stepY = floorY - ((i + 1) * stepHeight) - (i * (dest.Height * 0.015f));
+                    var step = new RectangleF(dest.X + (dest.Width * (0.18f + (i * 0.08f))), stepY, dest.Width * (0.64f - (i * 0.1f)), stepHeight);
                     DrawPanel(step.X, step.Y, step.Width, step.Height, new Color(156, 146, 122));
                 }
-                DrawPanel(dest.Center.X - (dest.Width * 0.03f), dest.Y + (dest.Height * 0.08f), dest.Width * 0.06f, dest.Height * 0.22f, new Color(190, 180, 154));
+                DrawPanel(dest.Center.X - (dest.Width * 0.03f), floorY - (dest.Height * 0.44f), dest.Width * 0.06f, dest.Height * 0.22f, new Color(190, 180, 154));
                 break;
             case '>':
                 for (var i = 0; i < 4; i++)
                 {
-                    var step = new RectangleF(dest.X + (dest.Width * (0.18f + (i * 0.08f))), dest.Y + (dest.Height * (0.36f + (i * 0.08f))), dest.Width * (0.64f - (i * 0.1f)), dest.Height * 0.08f);
+                    var stepHeight = dest.Height * 0.08f;
+                    var stepY = floorY - (dest.Height * 0.36f) + (i * (dest.Height * 0.055f));
+                    var step = new RectangleF(dest.X + (dest.Width * (0.18f + (i * 0.08f))), stepY, dest.Width * (0.64f - (i * 0.1f)), stepHeight);
                     DrawPanel(step.X, step.Y, step.Width, step.Height, new Color(134, 126, 108));
                 }
-                DrawPanel(dest.Center.X - (dest.Width * 0.03f), dest.Bottom - (dest.Height * 0.28f), dest.Width * 0.06f, dest.Height * 0.18f, new Color(172, 162, 136));
+                DrawPanel(dest.Center.X - (dest.Width * 0.03f), floorY - (dest.Height * 0.28f), dest.Width * 0.06f, dest.Height * 0.18f, new Color(172, 162, 136));
                 break;
             case 'G':
-                var chestBody = new RectangleF(dest.X + (dest.Width * 0.18f), dest.Bottom - (dest.Height * 0.2f), dest.Width * 0.64f, dest.Height * 0.12f);
-                var chestLid = new RectangleF(dest.X + (dest.Width * 0.22f), chestBody.Y - (dest.Height * 0.12f), dest.Width * 0.56f, dest.Height * 0.12f);
+                var chestBody = new RectangleF(dest.X + (dest.Width * 0.18f), floorY - (dest.Height * 0.14f), dest.Width * 0.64f, dest.Height * 0.12f);
+                var chestLid = new RectangleF(dest.X + (dest.Width * 0.22f), chestBody.Y - (dest.Height * 0.09f), dest.Width * 0.56f, dest.Height * 0.09f);
                 DrawPanel(chestBody.X, chestBody.Y, chestBody.Width, chestBody.Height, new Color(138, 96, 42));
                 DrawPanel(chestLid.X, chestLid.Y, chestLid.Width, chestLid.Height, new Color(172, 126, 58));
                 DrawFrame(chestBody, new Color(76, 52, 24), 1);
@@ -3037,12 +3097,13 @@ public sealed class NotimaGame : Game
         DrawText($"FOOD {party.Food}", new Vector2(HudX + 22, 168), new Color(171, 150, 99), 2);
         DrawText($"GOLD {party.Gold}", new Vector2(HudX + 22, 198), new Color(184, 151, 88), 2);
         DrawText($"LVL {party.Level}", new Vector2(HudX + 22, 228), new Color(123, 144, 173), 2);
-        DrawText($"WPN {party.WeaponTier}", new Vector2(HudX + 22, 258), new Color(170, 130, 104), 2);
-        DrawText($"ARM {party.ArmorTier}", new Vector2(HudX + 170, 258), new Color(133, 140, 160), 2);
+        DrawText($"ATK {GetPartyAttackRating()}", new Vector2(HudX + 22, 258), new Color(170, 130, 104), 2);
+        DrawText($"DEF {GetPartyDefenseRating()}", new Vector2(HudX + 170, 258), new Color(133, 140, 160), 2);
         DrawText($"KEYS {party.Keys}", new Vector2(HudX + 314, 258), new Color(171, 150, 99), 2);
         DrawText($"STEPS {party.Steps}", new Vector2(HudX + 22, 288), new Color(133, 140, 160), 2);
-        DrawText(GetWeaponName(), new Vector2(HudX + 22, 314), new Color(158, 128, 104), 1);
-        DrawText(GetArmorName(), new Vector2(HudX + 220, 314), new Color(128, 136, 151), 1);
+        DrawText($"INV {party.Inventory.Count}", new Vector2(HudX + 170, 288), new Color(133, 140, 160), 2);
+        DrawText(GetBestWeaponName(), new Vector2(HudX + 22, 314), new Color(158, 128, 104), 1);
+        DrawText(GetBestArmorName(), new Vector2(HudX + 220, 314), new Color(128, 136, 151), 1);
 
         DrawText("TILE", new Vector2(HudX + 22, 340), new Color(178, 150, 96), 2);
         DrawWrappedText(DescribeCurrentTile(), new Vector2(HudX + 22, 370), 2, HudWidth - 44, new Color(158, 169, 189));
@@ -3145,18 +3206,18 @@ public sealed class NotimaGame : Game
             DrawEncounterAnimation(panelRect);
         }
 
-        var lineY = uiMode == UiMode.Encounter ? panelRect.Y + 226 : panelRect.Y + 72;
+        var lineY = uiMode == UiMode.Encounter ? panelRect.Y + 182 : panelRect.Y + 72;
         foreach (var line in panelLines)
         {
             DrawWrappedText(line, new Vector2(panelRect.X + 22, lineY), 2, (int)panelRect.Width - 44, new Color(232, 238, 252));
-            lineY += uiMode == UiMode.Encounter ? 38 : 32;
+            lineY += uiMode == UiMode.Encounter ? 32 : 32;
         }
     }
 
     private RectangleF GetPanelRect()
     {
         return uiMode == UiMode.Encounter
-            ? new RectangleF(84, 266, 580, EncounterPanelHeight)
+            ? new RectangleF(84, 148, 580, EncounterPanelHeight)
             : new RectangleF(PanelX, PanelY, PanelWidth, PanelHeight);
     }
 
@@ -3204,9 +3265,40 @@ public sealed class NotimaGame : Game
         DrawText("ENTER CONFIRMS  R LEAVES", new Vector2(rect.X + 24, rect.Bottom - 18), new Color(126, 145, 172), 2);
     }
 
+    private void DrawDefeatPortalOverlay()
+    {
+        var progress = 1.0f - (defeatPortalTimer / 5.0f);
+        var pulse = 0.5f + (0.5f * MathF.Sin(totalTime * 5.6f));
+        var overlay = new RectangleF(0, 0, BaseWidth, BaseHeight);
+        DrawPanel(overlay.X, overlay.Y, overlay.Width, overlay.Height, new Color(12, 22, 46, 96));
+
+        var center = new Vector2(BaseWidth * 0.5f, BaseHeight * 0.5f);
+        for (var i = 0; i < 5; i++)
+        {
+            var ringScale = 1.0f - (i * 0.14f);
+            var width = (220.0f + (progress * 1040.0f)) * ringScale;
+            var height = (128.0f + (progress * 620.0f)) * ringScale;
+            var alpha = (byte)Math.Clamp(170 - (i * 28) + (pulse * 28.0f), 40, 210);
+            var ring = new RectangleF(center.X - (width * 0.5f), center.Y - (height * 0.5f), width, height);
+            DrawFrame(ring, new Color(86, 146, 255, alpha), 3);
+        }
+
+        for (var i = 0; i < 7; i++)
+        {
+            var angle = totalTime * 1.8f + (i * 0.9f);
+            var radius = 58.0f + (progress * 190.0f) + (i * 16.0f);
+            var x = center.X + (MathF.Cos(angle) * radius);
+            var y = center.Y + (MathF.Sin(angle) * radius * 0.58f);
+            DrawPanel(x - 3.0f, y - 14.0f, 6.0f, 28.0f, new Color(188, 226, 255, 128));
+        }
+
+        DrawText("THE BLUE GATE TAKES YOU", new Vector2(392, 302), new Color(214, 230, 255), 3);
+        DrawText("BACK TO THE STARTING ROAD", new Vector2(368, 336), new Color(184, 212, 255), 2);
+    }
+
     private void DrawEncounterAnimation(RectangleF panelRect)
     {
-        var boardRect = new RectangleF(panelRect.X + 18, panelRect.Y + 24, panelRect.Width - 36, 144);
+        var boardRect = new RectangleF(panelRect.X + 18, panelRect.Y + 6, panelRect.Width - 36, 112);
         DrawPanel(boardRect.X, boardRect.Y, boardRect.Width, boardRect.Height, new Color(28, 36, 50, 220));
         DrawFrame(boardRect, new Color(106, 128, 177), 1);
         if (encounter is null)
@@ -3215,18 +3307,18 @@ public sealed class NotimaGame : Game
         }
 
         var cardWidth = 156.0f;
-        var cardHeight = 118.0f;
+        var cardHeight = 92.0f;
         var gap = 12.0f;
         var totalWidth = (cardWidth * encounter.Enemies.Count) + (gap * Math.Max(0, encounter.Enemies.Count - 1));
         var startX = boardRect.Center.X - (totalWidth * 0.5f);
-        var startY = boardRect.Y + 12.0f;
+        var startY = boardRect.Y + 6.0f;
 
         for (var i = 0; i < encounter.Enemies.Count; i++)
         {
             var enemy = encounter.Enemies[i];
             var card = new RectangleF(startX + (i * (cardWidth + gap)), startY, cardWidth, cardHeight);
-            var portraitRect = new RectangleF(card.X + 5.0f, card.Y + 5.0f, 108.0f, 108.0f);
-            var captionRect = new RectangleF(card.Right - 38.0f, card.Y + 5.0f, 33.0f, cardHeight - 10.0f);
+            var portraitRect = new RectangleF(card.X + 5.0f, card.Y + 5.0f, 82.0f, 82.0f);
+            var captionRect = new RectangleF(card.Right - 64.0f, card.Y + 5.0f, 59.0f, cardHeight - 10.0f);
             var targetable = IsEnemyTargetable(i);
             var selected = i == selectedEnemyIndex && targetable;
             var cardColor = enemy.IsAlive ? new Color(18, 20, 26, 232) : new Color(14, 14, 18, 214);
@@ -3441,6 +3533,11 @@ public sealed class NotimaGame : Game
 
         party.Gold += encounter.RewardGold;
         party.Food += encounter.RewardFood;
+        string? itemDrop = null;
+        if (TryAwardEquipmentDrop(Math.Max(1, (dungeon?.Level ?? party.Level) + 1), out var awardedItem))
+        {
+            itemDrop = awardedItem;
+        }
 
         if (encounterFromDungeon && dungeon is not null && encounterIsBoss)
         {
@@ -3457,11 +3554,16 @@ public sealed class NotimaGame : Game
         {
             statusLine = $"{encounter.Name} defeated. Gold +{encounter.RewardGold}, Food +{encounter.RewardFood}.";
         }
+        if (!string.IsNullOrWhiteSpace(itemDrop))
+        {
+            statusLine += $" {itemDrop}.";
+        }
         OpenDialog(
             "VICTORY",
             $"{encounter.Name} FALLS.",
             $"GOLD +{encounter.RewardGold}",
             $"FOOD +{encounter.RewardFood}",
+            itemDrop ?? string.Empty,
             "ENTER CONTINUES"
         );
         audioPlayer?.PlayTrumpet();
@@ -3489,13 +3591,14 @@ public sealed class NotimaGame : Game
         switch (selectedSpell)
         {
             case SpellKind.Ember:
+                audioPlayer?.PlayMagic();
                 var target = GetSelectedEnemy() ?? encounter?.Enemies.FirstOrDefault(enemy => enemy.IsAlive);
                 if (target is null)
                 {
                     return false;
                 }
 
-                var emberDamage = 8 + party.Level + party.WeaponTier;
+                var emberDamage = 6 + party.Level + Math.Max(1, GetEquippedWeapon(party.Members[0]).Attack / 2);
                 target.Health = Math.Max(0, target.Health - emberDamage);
                 roundEvents.Add($"AVA casts EMBER for {emberDamage}");
                 if (!target.IsAlive)
@@ -3505,6 +3608,7 @@ public sealed class NotimaGame : Game
 
                 return true;
             case SpellKind.Mend:
+                audioPlayer?.PlayMagic();
                 var allyIndex = GetLowestHealthPartyIndex();
                 if (allyIndex is null)
                 {
@@ -3517,6 +3621,7 @@ public sealed class NotimaGame : Game
                 roundEvents.Add($"AVA casts MEND on {ally.Name} for {heal}");
                 return true;
             default:
+                audioPlayer?.PlayMagic();
                 party.WardCharges = 2;
                 roundEvents.Add("AVA casts AEGIS");
                 return true;
@@ -3702,66 +3807,207 @@ public sealed class NotimaGame : Game
         return bestIndex;
     }
 
-    private int GetWeaponUpgradeCost() => 18 + (party.WeaponTier * 12);
-
-    private int GetArmorUpgradeCost() => 16 + (party.ArmorTier * 10);
-
-    private string GetWeaponName() => party.WeaponTier switch
+    private void EnsurePartyEquipmentState()
     {
-        0 => "RUSTED KNIFE",
-        1 => "IRON BLADE",
-        2 => "MERCENARY SWORD",
-        3 => "TEMPERED SABRE",
-        4 => "STARFORGED EDGE",
-        _ => "MYTHIC EDGE",
-    };
+        EnsureInventoryContains("club");
+        EnsureInventoryContains("dagger");
+        EnsureInventoryContains("mace");
+        EnsureInventoryContains("padded");
+        EnsureInventoryContains("leather");
 
-    private string GetArmorName() => party.ArmorTier switch
+        if (party.Members.Count > 0)
+        {
+            party.Members[0].EquippedWeaponId ??= "mace";
+            party.Members[0].EquippedArmorId ??= "leather";
+        }
+        if (party.Members.Count > 1)
+        {
+            party.Members[1].EquippedWeaponId ??= "club";
+            party.Members[1].EquippedArmorId ??= "padded";
+        }
+        if (party.Members.Count > 2)
+        {
+            party.Members[2].EquippedWeaponId ??= "dagger";
+            party.Members[2].EquippedArmorId ??= "leather";
+        }
+        if (party.Members.Count > 3)
+        {
+            party.Members[3].EquippedWeaponId ??= "dagger";
+            party.Members[3].EquippedArmorId ??= "padded";
+        }
+
+        ApplyLegacyTierUpgrades();
+        foreach (var member in party.Members)
+        {
+            EnsureInventoryContains(member.EquippedWeaponId ?? "club");
+            EnsureInventoryContains(member.EquippedArmorId ?? "padded");
+        }
+        SyncLegacyGearTiers();
+    }
+
+    private void ApplyLegacyTierUpgrades()
     {
-        0 => "PATCHED CLOTH",
-        1 => "LEATHER JACK",
-        2 => "RING MAIL",
-        3 => "LAMELLAR COAT",
-        4 => "BLACK PLATE",
-        _ => "WARDEN MAIL",
-    };
+        if (party.WeaponTier > 0)
+        {
+            var maxRank = Math.Min(WeaponProgression.Length - 1, party.WeaponTier + 1);
+            for (var i = 0; i <= maxRank; i++)
+            {
+                EnsureInventoryContains(WeaponProgression[i]);
+            }
+        }
 
-    private string GetNextWeaponName() => party.WeaponTier switch
+        if (party.ArmorTier > 0)
+        {
+            var maxRank = Math.Min(ArmorProgression.Length - 1, party.ArmorTier + 1);
+            for (var i = 0; i <= maxRank; i++)
+            {
+                EnsureInventoryContains(ArmorProgression[i]);
+            }
+        }
+    }
+
+    private void SyncLegacyGearTiers()
     {
-        0 => "IRON BLADE",
-        1 => "MERCENARY SWORD",
-        2 => "TEMPERED SABRE",
-        3 => "STARFORGED EDGE",
-        _ => "MYTHIC EDGE",
-    };
+        party.WeaponTier = party.Inventory
+            .Select(id => EquipmentCatalog.TryGetValue(id, out var item) && item.Slot == EquipmentSlot.Weapon ? item.Rank : 0)
+            .DefaultIfEmpty(0)
+            .Max();
+        party.ArmorTier = party.Inventory
+            .Select(id => EquipmentCatalog.TryGetValue(id, out var item) && item.Slot == EquipmentSlot.Armor ? item.Rank : 0)
+            .DefaultIfEmpty(0)
+            .Max();
+    }
 
-    private string GetNextArmorName() => party.ArmorTier switch
+    private void EnsureInventoryContains(string itemId)
     {
-        0 => "LEATHER JACK",
-        1 => "RING MAIL",
-        2 => "LAMELLAR COAT",
-        3 => "BLACK PLATE",
-        _ => "WARDEN MAIL",
-    };
+        if (!party.Inventory.Contains(itemId))
+        {
+            party.Inventory.Add(itemId);
+        }
+    }
 
-    private bool TryAwardEquipmentDrop(out string itemDrop)
+    private EquipmentDefinition GetEquippedWeapon(PartyMember member)
+    {
+        var weaponId = member.EquippedWeaponId ?? "club";
+        return EquipmentCatalog.TryGetValue(weaponId, out var item) && item.Slot == EquipmentSlot.Weapon
+            ? item
+            : EquipmentCatalog["club"];
+    }
+
+    private EquipmentDefinition GetEquippedArmor(PartyMember member)
+    {
+        var armorId = member.EquippedArmorId ?? "padded";
+        return EquipmentCatalog.TryGetValue(armorId, out var item) && item.Slot == EquipmentSlot.Armor
+            ? item
+            : EquipmentCatalog["padded"];
+    }
+
+    private int GetArmorDefense(PartyMember member) => GetEquippedArmor(member).Defense;
+
+    private EquipmentDefinition? GetNextShopItem(EquipmentSlot slot)
+    {
+        var progression = slot == EquipmentSlot.Weapon ? WeaponProgression : ArmorProgression;
+        foreach (var itemId in progression)
+        {
+            if (!party.Inventory.Contains(itemId))
+            {
+                return EquipmentCatalog[itemId];
+            }
+        }
+
+        return null;
+    }
+
+    private string GrantEquipment(string itemId, string prefix)
+    {
+        EnsureInventoryContains(itemId);
+        var item = EquipmentCatalog[itemId];
+        var equipLine = TryAutoEquip(item, out var memberName)
+            ? $" {memberName} equips it."
+            : " It goes into the packs.";
+        SyncLegacyGearTiers();
+        return $"{prefix} {item.Name}.{equipLine}";
+    }
+
+    private bool TryAutoEquip(EquipmentDefinition item, out string memberName)
+    {
+        memberName = string.Empty;
+        PartyMember? bestMember = null;
+        var bestGain = 0;
+        foreach (var member in party.Members)
+        {
+            var current = item.Slot == EquipmentSlot.Weapon ? GetEquippedWeapon(member) : GetEquippedArmor(member);
+            var gain = item.Slot == EquipmentSlot.Weapon ? item.Attack - current.Attack : item.Defense - current.Defense;
+            if (gain > bestGain)
+            {
+                bestGain = gain;
+                bestMember = member;
+            }
+        }
+
+        if (bestMember is null)
+        {
+            return false;
+        }
+
+        if (item.Slot == EquipmentSlot.Weapon)
+        {
+            bestMember.EquippedWeaponId = item.Id;
+        }
+        else
+        {
+            bestMember.EquippedArmorId = item.Id;
+        }
+
+        memberName = bestMember.Name;
+        return true;
+    }
+
+    private string GetBestWeaponName()
+    {
+        var best = party.Members.Select(GetEquippedWeapon).OrderByDescending(item => item.Attack).FirstOrDefault();
+        return best?.Name ?? "CLUB";
+    }
+
+    private string GetBestArmorName()
+    {
+        var best = party.Members.Select(GetEquippedArmor).OrderByDescending(item => item.Defense).FirstOrDefault();
+        return best?.Name ?? "PADDED ARMOR";
+    }
+
+    private int GetPartyAttackRating() => party.Members.Where(member => member.IsAlive).Sum(member => GetEquippedWeapon(member).Attack);
+
+    private int GetPartyDefenseRating() => party.Members.Where(member => member.IsAlive).Sum(member => GetEquippedArmor(member).Defense);
+
+    private bool TryAwardEquipmentDrop(int lootLevel, out string itemDrop)
     {
         itemDrop = string.Empty;
-        if (random.NextDouble() < 0.18 && party.WeaponTier < 4)
+        if (random.NextDouble() >= 0.42)
         {
-            party.WeaponTier++;
-            itemDrop = GetWeaponName();
-            return true;
+            return false;
         }
 
-        if (random.NextDouble() < 0.18 && party.ArmorTier < 4)
+        var slot = random.NextDouble() < 0.5 ? EquipmentSlot.Weapon : EquipmentSlot.Armor;
+        var candidates = EquipmentCatalog.Values
+            .Where(item => item.Slot == slot && item.LootLevel <= lootLevel + 1)
+            .OrderBy(item => item.Rank)
+            .ToList();
+
+        if (candidates.Count == 0)
         {
-            party.ArmorTier++;
-            itemDrop = GetArmorName();
-            return true;
+            return false;
         }
 
-        return false;
+        var unseen = candidates.Where(item => !party.Inventory.Contains(item.Id)).ToList();
+        var pool = unseen.Count > 0 ? unseen : candidates;
+        var awarded = pool[random.Next(pool.Count)];
+        EnsureInventoryContains(awarded.Id);
+        var equipLine = TryAutoEquip(awarded, out var memberName)
+            ? $"{awarded.Name} for {memberName}"
+            : $"{awarded.Name} to inventory";
+        SyncLegacyGearTiers();
+        itemDrop = equipLine;
+        return true;
     }
 
     private void RegeneratePartyOneHitPoint()
@@ -3843,6 +4089,7 @@ public sealed class NotimaGame : Game
         playerCell = new GridPoint(save.PlayerX, save.PlayerY);
         dungeonCell = new GridPoint(save.DungeonX, save.DungeonY);
         party = save.Party.ToParty();
+        EnsurePartyEquipmentState();
         visitedLandmarks.Clear();
         foreach (var point in save.VisitedLandmarks)
         {
@@ -4013,7 +4260,7 @@ public sealed class NotimaGame : Game
             UiMode.Dialog => panelTitle,
             _ => "OVERWORLD"
         };
-        Window.Title = $"notima | {modeText} | HP {party.TotalHealth}/{party.MaxTotalHealth} | GOLD {party.Gold} | FOOD {party.Food} | W{party.WeaponTier} A{party.ArmorTier} K{party.Keys}";
+        Window.Title = $"notima | {modeText} | HP {party.TotalHealth}/{party.MaxTotalHealth} | GOLD {party.Gold} | FOOD {party.Food} | ATK {GetPartyAttackRating()} DEF {GetPartyDefenseRating()} K{party.Keys}";
     }
 
     private void UpdateLayout()
@@ -4132,6 +4379,8 @@ internal sealed class PartyState
 
     public int Steps { get; set; }
 
+    public List<string> Inventory { get; } = [];
+
     public List<PartyMember> Members { get; } = [];
 
     public int TotalHealth => Members.Sum(member => member.Health);
@@ -4171,6 +4420,10 @@ internal sealed class PartyMember(string name, Color tint, int maxHealth)
     public int MaxHealth { get; set; } = maxHealth;
 
     public int Health { get; set; } = maxHealth;
+
+    public string? EquippedWeaponId { get; set; }
+
+    public string? EquippedArmorId { get; set; }
 
     public bool IsAlive => Health > 0;
 }
@@ -4308,6 +4561,8 @@ internal sealed class PartySaveData
 
     public int Steps { get; set; }
 
+    public List<string> Inventory { get; set; } = [];
+
     public List<PartyMemberSaveData> Members { get; set; } = [];
 
     public static PartySaveData FromParty(PartyState party)
@@ -4324,6 +4579,7 @@ internal sealed class PartySaveData
             ArmorTier = party.ArmorTier,
             Keys = party.Keys,
             Steps = party.Steps,
+            Inventory = party.Inventory.ToList(),
             Members = party.Members.Select(member => new PartyMemberSaveData
             {
                 Name = member.Name,
@@ -4332,6 +4588,8 @@ internal sealed class PartySaveData
                 TintB = member.Tint.B,
                 MaxHealth = member.MaxHealth,
                 Health = member.Health,
+                EquippedWeaponId = member.EquippedWeaponId,
+                EquippedArmorId = member.EquippedArmorId,
             }).ToList(),
         };
     }
@@ -4351,12 +4609,15 @@ internal sealed class PartySaveData
             Keys = Keys,
             Steps = Steps,
         };
+        party.Inventory.AddRange(Inventory);
 
         foreach (var member in Members)
         {
             party.Members.Add(new PartyMember(member.Name, new Color(member.TintR, member.TintG, member.TintB), member.MaxHealth)
             {
-                Health = member.Health
+                Health = member.Health,
+                EquippedWeaponId = member.EquippedWeaponId,
+                EquippedArmorId = member.EquippedArmorId,
             });
         }
 
@@ -4377,6 +4638,10 @@ internal sealed class PartyMemberSaveData
     public int MaxHealth { get; set; }
 
     public int Health { get; set; }
+
+    public string? EquippedWeaponId { get; set; }
+
+    public string? EquippedArmorId { get; set; }
 }
 
 internal sealed class DungeonSaveData
@@ -4549,6 +4814,31 @@ internal sealed class EnemyUnit(string name, int maxHealth, int attackMin, int a
     public int BoardY { get; } = boardY;
 
     public bool IsAlive => Health > 0;
+}
+
+internal sealed class EquipmentDefinition(string id, string name, EquipmentSlot slot, int attack, int defense, int cost, int rank, int lootLevel)
+{
+    public string Id { get; } = id;
+
+    public string Name { get; } = name;
+
+    public EquipmentSlot Slot { get; } = slot;
+
+    public int Attack { get; } = attack;
+
+    public int Defense { get; } = defense;
+
+    public int Cost { get; } = cost;
+
+    public int Rank { get; } = rank;
+
+    public int LootLevel { get; } = lootLevel;
+}
+
+internal enum EquipmentSlot
+{
+    Weapon,
+    Armor,
 }
 
 internal enum UiMode

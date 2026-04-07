@@ -12,6 +12,21 @@
 
   <ItemGroup>
     <None Include="..\..\assets\data\overworld.json" Link="Content\Maps\overworld.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\01-footstep.ogg" Link="Content\Audio\01-footstep.ogg" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\02-footstep.ogg" Link="Content\Audio\02-footstep.ogg" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\03-footstep.ogg" Link="Content\Audio\03-footstep.ogg" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\04-footstep.ogg" Link="Content\Audio\04-footstep.ogg" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\pleasing-bell.wav" Link="Content\Audio\pleasing-bell.wav" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\metal-hit.wav" Link="Content\Audio\metal-hit.wav" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\metal-hit-2.wav" Link="Content\Audio\metal-hit-2.wav" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\metal-hit-3.wav" Link="Content\Audio\metal-hit-3.wav" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\swish-miss.ogg" Link="Content\Audio\swish-miss.ogg" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\sboe.wav" Link="Content\Audio\sboe.wav" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\magical_1.ogg" Link="Content\Audio\magical_1.ogg" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\teleport.wav" Link="Content\Audio\teleport.wav" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\door_open_01.ogg" Link="Content\Audio\door_open_01.ogg" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\fanfaresad.ogg" Link="Content\Audio\fanfaresad.ogg" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\castlefanfare.ogg" Link="Content\Audio\castlefanfare.ogg" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\original\notima_isometric_hero.png" Link="Content\Art\notima_isometric_hero.png" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\original\notima_isometric_tiles.png" Link="Content\Art\notima_isometric_tiles.png" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\original\notima_enemy_sheet.png" Link="Content\Art\notima_enemy_sheet.png" CopyToOutputDirectory="PreserveNewest" />

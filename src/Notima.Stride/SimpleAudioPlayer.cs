@@ -5,43 +5,96 @@ namespace Notima.Stride;
 
 internal sealed class SimpleAudioPlayer : IDisposable
 {
-    private readonly string audioDirectory;
-    private readonly string stepPath;
+    private readonly string generatedAudioDirectory;
+    private readonly string[] stepPaths;
+    private readonly string[] clashPaths;
     private readonly string bellPath;
-    private readonly string clashPath;
     private readonly string swishPath;
     private readonly string trumpetPath;
-    private readonly string? playerPath;
+    private readonly string magicPath;
+    private readonly string portalPath;
+    private readonly string chestPath;
+    private readonly Random random = new();
+    private readonly string? ffplayPath;
+    private readonly string? oggPlayerPath;
+    private readonly string? wavPlayerPath;
 
     public SimpleAudioPlayer()
     {
-        audioDirectory = Path.Combine(Path.GetTempPath(), "notima-audio");
-        Directory.CreateDirectory(audioDirectory);
+        var contentAudioDirectory = Path.Combine(AppContext.BaseDirectory, "Content", "Audio");
+        generatedAudioDirectory = Path.Combine(Path.GetTempPath(), "notima-audio");
+        Directory.CreateDirectory(generatedAudioDirectory);
 
-        stepPath = Path.Combine(audioDirectory, "step.wav");
-        bellPath = Path.Combine(audioDirectory, "bell.wav");
-        clashPath = Path.Combine(audioDirectory, "clash.wav");
-        swishPath = Path.Combine(audioDirectory, "swish.wav");
-        trumpetPath = Path.Combine(audioDirectory, "trumpet.wav");
-
-        WriteWav(stepPath, BuildStepPcm(), 22050);
-        WriteWav(bellPath, BuildBellPcm(), 22050);
-        WriteWav(clashPath, BuildClashPcm(), 22050);
-        WriteWav(swishPath, BuildSwishPcm(), 22050);
-        WriteWav(trumpetPath, BuildTrumpetPcm(), 22050);
-
-        playerPath = ResolvePlayer();
+        stepPaths = ResolveStepPaths(contentAudioDirectory);
+        clashPaths = ResolveExistingPaths(
+            Path.Combine(contentAudioDirectory, "metal-hit.wav"),
+            Path.Combine(contentAudioDirectory, "metal-hit-2.wav"),
+            Path.Combine(contentAudioDirectory, "metal-hit-3.wav"));
+        bellPath = ResolveOrCreate(
+            Path.Combine(contentAudioDirectory, "pleasing-bell.wav"),
+            Path.Combine(generatedAudioDirectory, "bell.wav"),
+            BuildBellPcm());
+        swishPath = ResolveOrCreate(
+            Path.Combine(contentAudioDirectory, "swish-miss.ogg"),
+            Path.Combine(generatedAudioDirectory, "swish.wav"),
+            BuildSwishPcm());
+        trumpetPath = ResolveOrCreate(
+            Path.Combine(contentAudioDirectory, "castlefanfare.ogg"),
+            Path.Combine(generatedAudioDirectory, "trumpet.wav"),
+            BuildTrumpetPcm());
+        magicPath = ResolveOrCreate(
+            Path.Combine(contentAudioDirectory, "magical_1.ogg"),
+            Path.Combine(generatedAudioDirectory, "magic.wav"),
+            BuildMagicPcm());
+        portalPath = ResolveOrCreate(
+            Path.Combine(contentAudioDirectory, "teleport.wav"),
+            Path.Combine(generatedAudioDirectory, "portal.wav"),
+            BuildPortalPcm());
+        chestPath = ResolveOrCreate(
+            Path.Combine(contentAudioDirectory, "door_open_01.ogg"),
+            Path.Combine(generatedAudioDirectory, "chest.wav"),
+            BuildChestPcm());
+        ffplayPath = ResolveExecutable("/usr/bin/ffplay");
+        oggPlayerPath = ResolveExecutable("/usr/bin/ogg123");
+        wavPlayerPath = ResolveFirstAvailable("/usr/bin/paplay", "/usr/bin/pw-play", "/usr/bin/aplay");
     }
 
-    public void PlayStep() => Play(stepPath);
+    public void PlayStep()
+    {
+        if (stepPaths.Length == 0)
+        {
+            return;
+        }
+
+        Play(stepPaths[random.Next(stepPaths.Length)]);
+    }
 
     public void PlayBell() => Play(bellPath);
 
-    public void PlayClash() => Play(clashPath);
+    public void PlayClash()
+    {
+        if (clashPaths.Length > 0)
+        {
+            Play(clashPaths[random.Next(clashPaths.Length)]);
+            return;
+        }
+
+        var fallback = ResolveOrCreate(
+            Path.Combine(generatedAudioDirectory, "missing-clash.wav"),
+            Path.Combine(generatedAudioDirectory, "clash.wav"),
+            BuildClashPcm());
+        Play(fallback);
+    }
 
     public void PlaySwish() => Play(swishPath);
 
     public void PlayTrumpet() => Play(trumpetPath);
+
+    public void PlayMagic() => Play(magicPath);
+
+    public void PlayPortal() => Play(portalPath);
+
+    public void PlayChest() => Play(chestPath);
 
     public void Dispose()
     {
@@ -49,17 +102,73 @@ internal sealed class SimpleAudioPlayer : IDisposable
 
     private void Play(string path)
     {
-        if (string.IsNullOrWhiteSpace(playerPath))
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
         {
             return;
         }
 
-        _ = StartProcess(playerPath, $"\"{path}\"");
+        var extension = Path.GetExtension(path).ToLowerInvariant();
+        if ((extension == ".ogg" || extension == ".mp3") && !string.IsNullOrWhiteSpace(ffplayPath))
+        {
+            _ = StartProcess(ffplayPath, $"-nodisp -autoexit -loglevel quiet \"{path}\"");
+            return;
+        }
+
+        if (extension == ".ogg" && !string.IsNullOrWhiteSpace(oggPlayerPath))
+        {
+            _ = StartProcess(oggPlayerPath, $"-q \"{path}\"");
+            return;
+        }
+
+        if (extension == ".wav" && !string.IsNullOrWhiteSpace(wavPlayerPath))
+        {
+            _ = StartProcess(wavPlayerPath, $"\"{path}\"");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(ffplayPath))
+        {
+            _ = StartProcess(ffplayPath, $"-nodisp -autoexit -loglevel quiet \"{path}\"");
+        }
     }
 
-    private static string? ResolvePlayer()
+    private static string[] ResolveStepPaths(string contentAudioDirectory)
     {
-        foreach (var candidate in new[] { "/usr/bin/paplay", "/usr/bin/pw-play", "/usr/bin/aplay", "/usr/bin/ffplay" })
+        var candidates = new[]
+        {
+            Path.Combine(contentAudioDirectory, "01-footstep.ogg"),
+            Path.Combine(contentAudioDirectory, "02-footstep.ogg"),
+            Path.Combine(contentAudioDirectory, "03-footstep.ogg"),
+            Path.Combine(contentAudioDirectory, "04-footstep.ogg"),
+        };
+
+        return candidates.Where(File.Exists).ToArray();
+    }
+
+    private static string[] ResolveExistingPaths(params string[] candidates)
+    {
+        return candidates.Where(File.Exists).ToArray();
+    }
+
+    private static string ResolveOrCreate(string preferredPath, string fallbackGeneratedPath, float[] fallbackPcm)
+    {
+        if (File.Exists(preferredPath))
+        {
+            return preferredPath;
+        }
+
+        WriteWav(fallbackGeneratedPath, fallbackPcm, 22050);
+        return fallbackGeneratedPath;
+    }
+
+    private static string? ResolveExecutable(string path)
+    {
+        return File.Exists(path) ? path : null;
+    }
+
+    private static string? ResolveFirstAvailable(params string[] candidates)
+    {
+        foreach (var candidate in candidates)
         {
             if (File.Exists(candidate))
             {
@@ -77,7 +186,7 @@ internal sealed class SimpleAudioPlayer : IDisposable
             return Process.Start(new ProcessStartInfo
             {
                 FileName = fileName,
-                Arguments = fileName.EndsWith("ffplay", StringComparison.Ordinal) ? $"-nodisp -loglevel quiet \"{arguments.Trim('"')}\"" : arguments,
+                Arguments = arguments,
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardError = true,
@@ -88,24 +197,6 @@ internal sealed class SimpleAudioPlayer : IDisposable
         {
             return null;
         }
-    }
-
-    private static float[] BuildStepPcm()
-    {
-        const int sampleRate = 22050;
-        const double duration = 0.07;
-        var length = (int)(sampleRate * duration);
-        var samples = new float[length];
-        for (var i = 0; i < length; i++)
-        {
-            var t = i / (float)sampleRate;
-            var envelope = MathF.Exp(-32.0f * t);
-            var tone = MathF.Sin(2.0f * MathF.PI * 160.0f * t) * 0.4f;
-            var click = ((i % 37) / 37.0f - 0.5f) * 0.12f;
-            samples[i] = (tone + click) * envelope;
-        }
-
-        return samples;
     }
 
     private static float[] BuildBellPcm()
@@ -189,6 +280,65 @@ internal sealed class SimpleAudioPlayer : IDisposable
             var airy = MathF.Sin(2.0f * MathF.PI * sweep * t) * 0.14f;
             var noise = ((((i * 23) % 101) / 50.5f) - 1.0f) * 0.12f;
             samples[i] = (airy + noise) * env;
+        }
+
+        return samples;
+    }
+
+    private static float[] BuildMagicPcm()
+    {
+        const int sampleRate = 22050;
+        const double duration = 0.55;
+        var length = (int)(sampleRate * duration);
+        var samples = new float[length];
+
+        for (var i = 0; i < length; i++)
+        {
+            var t = i / (float)sampleRate;
+            var env = t < 0.08f ? t / 0.08f : MathF.Exp(-4.0f * (t - 0.08f));
+            var shimmer = MathF.Sin(2.0f * MathF.PI * (520.0f + (t * 420.0f)) * t) * 0.16f;
+            var upper = MathF.Sin(2.0f * MathF.PI * (890.0f + (t * 260.0f)) * t) * 0.09f;
+            samples[i] = (shimmer + upper) * env;
+        }
+
+        return samples;
+    }
+
+    private static float[] BuildPortalPcm()
+    {
+        const int sampleRate = 22050;
+        const double duration = 1.4;
+        var length = (int)(sampleRate * duration);
+        var samples = new float[length];
+
+        for (var i = 0; i < length; i++)
+        {
+            var t = i / (float)sampleRate;
+            var env = MathF.Exp(-1.8f * t);
+            var hum = MathF.Sin(2.0f * MathF.PI * 140.0f * t) * 0.08f;
+            var sweep = MathF.Sin(2.0f * MathF.PI * (260.0f + (t * 540.0f)) * t) * 0.12f;
+            var crackle = ((((i * 29) % 131) / 65.5f) - 1.0f) * 0.05f;
+            samples[i] = (hum + sweep + crackle) * env;
+        }
+
+        return samples;
+    }
+
+    private static float[] BuildChestPcm()
+    {
+        const int sampleRate = 22050;
+        const double duration = 0.4;
+        var length = (int)(sampleRate * duration);
+        var samples = new float[length];
+
+        for (var i = 0; i < length; i++)
+        {
+            var t = i / (float)sampleRate;
+            var env = MathF.Exp(-6.0f * t);
+            var wood = MathF.Sin(2.0f * MathF.PI * 170.0f * t) * 0.08f;
+            var scrape = MathF.Sin(2.0f * MathF.PI * (220.0f + (t * 90.0f)) * t) * 0.05f;
+            var noise = ((((i * 19) % 101) / 50.5f) - 1.0f) * 0.03f;
+            samples[i] = (wood + scrape + noise) * env;
         }
 
         return samples;
