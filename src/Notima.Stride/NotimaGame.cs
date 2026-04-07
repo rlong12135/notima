@@ -52,6 +52,7 @@ public sealed class NotimaGame : Game
     private Texture whiteTexture = null!;
     private Texture playerTexture = null!;
     private Texture tileTexture = null!;
+    private Texture enemyTexture = null!;
     private OverworldMap map = null!;
     private GridPoint playerCell;
     private Direction facing = Direction.Down;
@@ -103,8 +104,9 @@ public sealed class NotimaGame : Game
 
         spriteBatch = new SpriteBatch(GraphicsDevice);
         whiteTexture = GraphicsDevice.GetSharedWhiteTexture();
-        tileTexture = LoadRgbaTexture("Content/Art/notima_isometric_tiles.rgba", 32, 264);
+        tileTexture = LoadRgbaTexture("Content/Art/notima_isometric_tiles.rgba", 32, 495);
         playerTexture = LoadRgbaTexture("Content/Art/notima_isometric_hero.rgba", 99, 528);
+        enemyTexture = LoadRgbaTexture("Content/Art/notima_enemy_sheet.rgba", 50, 75);
         LoadMapFromDisk();
         UpdateWindowTitle();
     }
@@ -139,6 +141,7 @@ public sealed class NotimaGame : Game
     {
         tileTexture?.Dispose();
         playerTexture?.Dispose();
+        enemyTexture?.Dispose();
         spriteBatch?.Dispose();
         base.Destroy();
     }
@@ -649,10 +652,6 @@ public sealed class NotimaGame : Game
                 var tileSource = GetIsoTileSource(symbol);
                 spriteBatch.Draw(tileTexture, destination, tileSource, Color.White, 0, Vector2.Zero);
 
-                if (symbol is 'T' or 'K' or 'R' or 'S' or 'H' or 'C' or 'D')
-                {
-                    DrawLandmarkMarker(symbol, destination);
-                }
             }
         }
 
@@ -701,24 +700,6 @@ public sealed class NotimaGame : Game
             spriteBatch.Draw(whiteTexture, new RectangleF(destination.X + 10.0f, destination.Y + destination.Height - 5.0f, destination.Width - 20.0f, 3.0f), new Color(0, 0, 0, 56));
             spriteBatch.Draw(playerTexture, destination, sourceRect, tints[i], 0, Vector2.Zero);
         }
-    }
-
-    private void DrawLandmarkMarker(char symbol, RectangleF tileDestination)
-    {
-        var color = symbol switch
-        {
-            'T' => new Color(255, 234, 139),
-            'K' => new Color(247, 242, 228),
-            'R' => new Color(241, 180, 171),
-            'S' => new Color(245, 189, 255),
-            'H' => new Color(255, 214, 146),
-            'C' => new Color(255, 163, 124),
-            'D' => new Color(230, 144, 144),
-            _ => Color.White,
-        };
-
-        DrawPanel(tileDestination.Center.X - 5.0f, tileDestination.Y + 20.0f, 10.0f, 10.0f, color);
-        DrawFrame(new RectangleF(tileDestination.Center.X - 6.0f, tileDestination.Y + 19.0f, 12.0f, 12.0f), new Color(35, 20, 20), 1);
     }
 
     private static Rectangle GetPlayerSourceFrameFor(Direction direction, int frame, int roleIndex)
@@ -899,74 +880,22 @@ public sealed class NotimaGame : Game
     {
         var frameIndex = ((int)(totalTime * 6.0f)) % 2;
         var bob = MathF.Sin(totalTime * 5.0f) * 2.0f;
-        var palette = GetEnemyPalette(enemyName);
-        var frame = GetEnemyFrame(enemyName, frameIndex);
-
-        for (var row = 0; row < frame.Length; row++)
-        {
-            for (var column = 0; column < frame[row].Length; column++)
-            {
-                var code = frame[row][column];
-                if (code == '.')
-                {
-                    continue;
-                }
-
-                if (!palette.TryGetValue(code, out var color))
-                {
-                    continue;
-                }
-
-                spriteBatch.Draw(
-                    whiteTexture,
-                    new RectangleF(origin.X + (column * scale), origin.Y + (row * scale) + bob, scale, scale),
-                    color);
-            }
-        }
+        var source = GetEnemySourceFrame(enemyName, frameIndex);
+        var destination = new RectangleF(origin.X, origin.Y + bob, source.Width * scale, source.Height * scale);
+        spriteBatch.Draw(whiteTexture, new RectangleF(destination.X + 4.0f, destination.Bottom - 4.0f, destination.Width - 8.0f, 3.0f), new Color(0, 0, 0, 56));
+        spriteBatch.Draw(enemyTexture, destination, new RectangleF(source.X, source.Y, source.Width, source.Height), Color.White, 0, Vector2.Zero);
     }
 
-    private static Dictionary<char, Color> GetEnemyPalette(string enemyName)
+    private static Rectangle GetEnemySourceFrame(string enemyName, int frameIndex)
     {
-        return enemyName switch
+        var row = enemyName switch
         {
-            "WOLF" => new Dictionary<char, Color>
-            {
-                ['A'] = new(92, 101, 122),
-                ['B'] = new(165, 179, 207),
-                ['C'] = new(232, 236, 255),
-                ['D'] = new(255, 118, 118),
-            },
-            "LEECH" => new Dictionary<char, Color>
-            {
-                ['A'] = new(88, 131, 84),
-                ['B'] = new(140, 203, 130),
-                ['C'] = new(220, 250, 186),
-                ['D'] = new(255, 148, 133),
-            },
-            _ => new Dictionary<char, Color>
-            {
-                ['A'] = new(118, 69, 54),
-                ['B'] = new(183, 111, 84),
-                ['C'] = new(247, 205, 164),
-                ['D'] = new(232, 232, 240),
-            },
+            "WOLF" => 0,
+            "LEECH" => 1,
+            _ => 2,
         };
-    }
 
-    private static string[] GetEnemyFrame(string enemyName, int frameIndex)
-    {
-        return enemyName switch
-        {
-            "WOLF" => frameIndex == 0
-                ? ["....AA......", "...ABBA.....", "..ABBBAA....", ".ABBCCBA....", ".ABCCCCBA...", ".ABBDDDBA...", ".AABBBBAA...", ".A..AA..A..."]
-                : [".....AA.....", "....ABBA....", "...ABBBAA...", "..ABBCCBA...", ".ABCCCCBA...", ".ABBDDDBA...", ".AABBBBAA...", ".AA..AA.A..."],
-            "LEECH" => frameIndex == 0
-                ? ["....AA......", "..AABBAA....", ".ABBCCBBA...", ".ABCCCCBA...", ".ABCDDCBA...", ".ABBCCBBA...", "..AABBAA....", "....AA......"]
-                : ["...AA.......", "..AABBA.....", ".ABBCCBBA...", ".ABCCCCCBA..", ".ABCDDDCBA..", ".ABBCCBBA...", "..AABBA.....", "...AA......."],
-            _ => frameIndex == 0
-                ? ["....DD......", "...DAAD.....", "..DABBAD....", ".DAABBACD...", ".DAABBBAD...", ".DABCCBAD...", ".DDAA.ADD...", "...D..D....."]
-                : [".....DD.....", "....DAAD....", "...DABBAD...", "..DAABBACD..", ".DAABBBAD...", ".DABCCBAD...", ".DDAA.ADD...", "..D....D...."],
-        };
+        return new Rectangle(frameIndex * 25, row * 25, 24, 24);
     }
 
     private void CycleEnemyTarget(int direction)
@@ -1312,8 +1241,15 @@ public sealed class NotimaGame : Game
             '*' => new RectangleF(0, 0, IsoSheetCell, IsoSheetCell),
             'F' => new RectangleF(0, 4 * IsoSheetPitch, IsoSheetCell, IsoSheetCell),
             '=' => new RectangleF(0, 6 * IsoSheetPitch, IsoSheetCell, IsoSheetCell),
-            'T' or 'K' or 'R' or 'S' or 'H' or 'C' or 'D' => new RectangleF(0, 3 * IsoSheetPitch, IsoSheetCell, IsoSheetCell),
-            _ => new RectangleF(0, 3 * IsoSheetPitch, IsoSheetCell, IsoSheetCell),
+            'P' => new RectangleF(0, 5 * IsoSheetPitch, IsoSheetCell, IsoSheetCell),
+            'T' => new RectangleF(0, 3 * IsoSheetPitch, IsoSheetCell, IsoSheetCell),
+            'K' => new RectangleF(0, 8 * IsoSheetPitch, IsoSheetCell, IsoSheetCell),
+            'R' => new RectangleF(0, 9 * IsoSheetPitch, IsoSheetCell, IsoSheetCell),
+            'S' => new RectangleF(0, 10 * IsoSheetPitch, IsoSheetCell, IsoSheetCell),
+            'H' => new RectangleF(0, 11 * IsoSheetPitch, IsoSheetCell, IsoSheetCell),
+            'C' => new RectangleF(0, 12 * IsoSheetPitch, IsoSheetCell, IsoSheetCell),
+            'D' => new RectangleF(0, 13 * IsoSheetPitch, IsoSheetCell, IsoSheetCell),
+            _ => new RectangleF(0, 14 * IsoSheetPitch, IsoSheetCell, IsoSheetCell),
         };
     }
 

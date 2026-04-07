@@ -9,6 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 ASSET_DIR = ROOT / "assets" / "original"
 CELL = 32
 PITCH = 33
+ENEMY_CELL = 24
+ENEMY_PITCH = 25
 
 
 def make_canvas(width: int, height: int) -> Image.Image:
@@ -86,17 +88,78 @@ def draw_structure(draw: ImageDraw.ImageDraw, y: int) -> None:
     draw.line((11, y + 20, 21, y + 20), fill=(88, 78, 66, 255))
 
 
+def draw_keep(draw: ImageDraw.ImageDraw, y: int) -> None:
+    draw_diamond(draw, 16, y + 2, 15, 8, (112, 152, 96, 255), (74, 101, 63, 255))
+    draw.rectangle((10, y + 11, 22, y + 20), fill=(182, 185, 191, 255), outline=(92, 96, 104, 255))
+    draw.rectangle((11, y + 8, 14, y + 12), fill=(168, 172, 179, 255), outline=(92, 96, 104, 255))
+    draw.rectangle((18, y + 8, 21, y + 12), fill=(168, 172, 179, 255), outline=(92, 96, 104, 255))
+    draw.rectangle((14, y + 14, 18, y + 20), fill=(92, 79, 73, 255))
+    draw.line((10, y + 11, 22, y + 11), fill=(220, 224, 230, 255))
+
+
+def draw_ruins(draw: ImageDraw.ImageDraw, y: int) -> None:
+    draw_diamond(draw, 16, y + 2, 15, 8, (118, 148, 96, 255), (76, 98, 62, 255))
+    draw.rectangle((10, y + 14, 15, y + 19), fill=(157, 145, 135, 255), outline=(91, 82, 75, 255))
+    draw.rectangle((17, y + 11, 22, y + 19), fill=(172, 156, 142, 255), outline=(98, 88, 80, 255))
+    draw.line((11, y + 14, 14, y + 11), fill=(94, 78, 70, 255))
+    draw.line((18, y + 15, 22, y + 12), fill=(94, 78, 70, 255))
+    draw.point((15, y + 18), fill=(201, 168, 149, 255))
+
+
+def draw_shrine(draw: ImageDraw.ImageDraw, y: int) -> None:
+    draw_diamond(draw, 16, y + 2, 15, 8, (111, 149, 104, 255), (73, 98, 67, 255))
+    draw.polygon([(16, y + 6), (20, y + 11), (16, y + 16), (12, y + 11)], fill=(219, 197, 241, 255), outline=(118, 92, 144, 255))
+    draw.rectangle((15, y + 16, 17, y + 20), fill=(205, 187, 163, 255), outline=(102, 88, 75, 255))
+    draw.line((16, y + 8, 16, y + 14), fill=(251, 241, 255, 255))
+    draw.line((13, y + 11, 19, y + 11), fill=(251, 241, 255, 255))
+
+
+def draw_harbor(draw: ImageDraw.ImageDraw, y: int) -> None:
+    draw_diamond(draw, 16, y + 2, 15, 8, (103, 151, 184, 255), (68, 101, 124, 255))
+    draw.polygon([(9, y + 12), (16, y + 7), (21, y + 11), (15, y + 16)], fill=(208, 182, 141, 255), outline=(110, 84, 56, 255))
+    draw.line((19, y + 7, 19, y + 17), fill=(92, 70, 49, 255))
+    draw.polygon([(19, y + 8), (24, y + 11), (19, y + 13)], fill=(241, 236, 219, 255), outline=(135, 128, 116, 255))
+    draw.line((10, y + 17, 22, y + 13), fill=(225, 241, 255, 190))
+
+
+def draw_camp(draw: ImageDraw.ImageDraw, y: int) -> None:
+    draw_diamond(draw, 16, y + 2, 15, 8, (124, 159, 103, 255), (82, 104, 67, 255))
+    draw.polygon([(11, y + 16), (16, y + 10), (21, y + 16)], fill=(205, 155, 103, 255), outline=(112, 73, 41, 255))
+    draw.line((14, y + 18, 18, y + 18), fill=(255, 176, 94, 255))
+    draw.point((16, y + 16), fill=(255, 241, 165, 255))
+
+
+def draw_dungeon(draw: ImageDraw.ImageDraw, y: int) -> None:
+    draw_diamond(draw, 16, y + 2, 15, 8, (108, 137, 102, 255), (72, 91, 67, 255))
+    draw.polygon([(11, y + 12), (16, y + 8), (21, y + 12), (21, y + 19), (11, y + 19)], fill=(92, 88, 97, 255), outline=(47, 46, 53, 255))
+    draw.rectangle((14, y + 13, 18, y + 19), fill=(26, 26, 32, 255))
+    draw.line((13, y + 12, 19, y + 12), fill=(150, 147, 160, 255))
+
+
+def draw_path(draw: ImageDraw.ImageDraw, y: int) -> None:
+    draw_diamond(draw, 16, y + 2, 15, 8, (126, 173, 100, 255), (80, 111, 63, 255))
+    draw.line((12, y + 8, 17, y + 12), fill=(189, 163, 122, 255), width=2)
+    draw.line((17, y + 12, 21, y + 17), fill=(189, 163, 122, 255), width=2)
+
+
 def build_tile_sheet() -> Image.Image:
-    image = make_canvas(CELL, PITCH * 8)
+    image = make_canvas(CELL, PITCH * 15)
     draw = ImageDraw.Draw(image)
     draw_forest(draw, PITCH * 0)
     draw_plains(draw, PITCH * 1)
     draw_mountains(draw, PITCH * 2)
     draw_structure(draw, PITCH * 3)
     draw_fen(draw, PITCH * 4)
-    draw_plains(draw, PITCH * 5)
+    draw_path(draw, PITCH * 5)
     draw_road(draw, PITCH * 6)
     draw_water(draw, PITCH * 7)
+    draw_keep(draw, PITCH * 8)
+    draw_ruins(draw, PITCH * 9)
+    draw_shrine(draw, PITCH * 10)
+    draw_harbor(draw, PITCH * 11)
+    draw_camp(draw, PITCH * 12)
+    draw_dungeon(draw, PITCH * 13)
+    draw_plains(draw, PITCH * 14)
     return image
 
 
@@ -223,6 +286,51 @@ def build_character_sheet() -> Image.Image:
     return image
 
 
+def draw_enemy_shadow(draw: ImageDraw.ImageDraw, x: int, y: int) -> None:
+    draw.ellipse((x + 5, y + 18, x + 19, y + 22), fill=(0, 0, 0, 54))
+
+
+def draw_wolf_frame(draw: ImageDraw.ImageDraw, x: int, y: int, frame: int) -> None:
+    step = (-1, 0, 1)[frame]
+    draw_enemy_shadow(draw, x, y)
+    draw.polygon([(x + 4, y + 16), (x + 8, y + 11), (x + 15, y + 10), (x + 19, y + 13), (x + 15, y + 18), (x + 8, y + 19)], fill=(105, 115, 134, 255), outline=(39, 44, 55, 255))
+    draw.polygon([(x + 15, y + 10), (x + 18, y + 7), (x + 20, y + 11)], fill=(105, 115, 134, 255), outline=(39, 44, 55, 255))
+    draw.point((x + 17, y + 12), fill=(232, 91, 91, 255))
+    draw.line((x + 7 - step, y + 18, x + 6 - step, y + 23), fill=(51, 54, 63, 255), width=2)
+    draw.line((x + 12 + step, y + 18, x + 12 + step, y + 23), fill=(51, 54, 63, 255), width=2)
+    draw.line((x + 4, y + 16, x + 1, y + 13 + step), fill=(70, 77, 92, 255), width=2)
+
+
+def draw_leech_frame(draw: ImageDraw.ImageDraw, x: int, y: int, frame: int) -> None:
+    offset = (-1, 1)[frame]
+    draw_enemy_shadow(draw, x, y + 1)
+    draw.ellipse((x + 5, y + 9, x + 19, y + 18), fill=(98, 148, 96, 255), outline=(45, 78, 44, 255))
+    draw.arc((x + 4, y + 11 + offset, x + 12, y + 21 + offset), 200, 355, fill=(182, 224, 161, 255))
+    draw.arc((x + 12, y + 10 - offset, x + 20, y + 20 - offset), 185, 340, fill=(182, 224, 161, 255))
+    draw.point((x + 17, y + 13), fill=(255, 167, 144, 255))
+
+
+def draw_bandit_frame(draw: ImageDraw.ImageDraw, x: int, y: int, frame: int) -> None:
+    step = (-1, 1)[frame]
+    draw_enemy_shadow(draw, x, y)
+    draw.polygon([(x + 12, y + 4), (x + 17, y + 8), (x + 16, y + 18), (x + 12, y + 22), (x + 8, y + 18), (x + 7, y + 8)], fill=(121, 80, 58, 255), outline=(47, 33, 28, 255))
+    draw.ellipse((x + 9, y + 4, x + 15, y + 10), fill=(236, 198, 162, 255), outline=(47, 33, 28, 255))
+    draw.rectangle((x + 10, y + 4, x + 15, y + 6), fill=(72, 42, 35, 255))
+    draw.line((x + 8 - step, y + 21, x + 7 - step, y + 24), fill=(54, 39, 33, 255), width=2)
+    draw.line((x + 15 + step, y + 21, x + 16 + step, y + 24), fill=(54, 39, 33, 255), width=2)
+    draw.line((x + 17, y + 10, x + 21, y + 7), fill=(184, 184, 194, 255), width=2)
+
+
+def build_enemy_sheet() -> Image.Image:
+    image = make_canvas(ENEMY_PITCH * 2, ENEMY_PITCH * 3)
+    draw = ImageDraw.Draw(image)
+    for frame in range(2):
+        draw_wolf_frame(draw, frame * ENEMY_PITCH, 0, frame)
+        draw_leech_frame(draw, frame * ENEMY_PITCH, ENEMY_PITCH, frame)
+        draw_bandit_frame(draw, frame * ENEMY_PITCH, ENEMY_PITCH * 2, frame)
+    return image
+
+
 def write_outputs(image: Image.Image, stem: str) -> None:
     png_path = ASSET_DIR / f"{stem}.png"
     rgba_path = ASSET_DIR / f"{stem}.rgba"
@@ -234,6 +342,7 @@ def main() -> None:
     ASSET_DIR.mkdir(parents=True, exist_ok=True)
     write_outputs(build_tile_sheet(), "notima_isometric_tiles")
     write_outputs(build_character_sheet(), "notima_isometric_hero")
+    write_outputs(build_enemy_sheet(), "notima_enemy_sheet")
     print(f"Wrote assets to {ASSET_DIR}")
 
 
