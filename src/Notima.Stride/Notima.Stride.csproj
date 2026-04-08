@@ -27,6 +27,8 @@
     <None Include="..\..\assets\audio\door_open_01.ogg" Link="Content\Audio\door_open_01.ogg" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\audio\fanfaresad.ogg" Link="Content\Audio\fanfaresad.ogg" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\audio\castlefanfare.ogg" Link="Content\Audio\castlefanfare.ogg" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\wolf_monster_6.mp3" Link="Content\Audio\wolf_monster_6.mp3" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\leech-suck.ogg" Link="Content\Audio\leech-suck.ogg" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\original\notima_isometric_hero.png" Link="Content\Art\notima_isometric_hero.png" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\original\notima_isometric_tiles.png" Link="Content\Art\notima_isometric_tiles.png" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\original\notima_enemy_sheet.png" Link="Content\Art\notima_enemy_sheet.png" CopyToOutputDirectory="PreserveNewest" />

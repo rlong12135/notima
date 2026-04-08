@@ -847,7 +847,7 @@ public sealed class NotimaGame : Game
         if (random.NextDouble() < 0.16)
         {
             roundEvents.Add($"{enemy.Name} misses {party.Members[targetPartyIndex].Name}");
-            audioPlayer?.PlaySwish();
+            PlayEnemyMissSound(enemy.Name);
             return;
         }
         var enemyDamageBase = random.Next(enemy.AttackMin, enemy.AttackMax + 1);
@@ -859,7 +859,7 @@ public sealed class NotimaGame : Game
 
         DamagePartyMember(targetPartyIndex, enemyDamage);
         roundEvents.Add($"{enemy.Name} hits {party.Members[targetPartyIndex].Name} for {enemyDamage}");
-        audioPlayer?.PlayClash();
+        PlayEnemyHitSound(enemy.Name);
     }
 
     private void HandleDefeat()
@@ -1601,6 +1601,7 @@ public sealed class NotimaGame : Game
         DrawPanel(viewport.X, viewport.Y, viewport.Width, viewport.Height, new Color(10, 12, 18, 255));
         DrawFrame(viewport, new Color(80, 88, 106), 2);
         DrawOverworldEnvironment(viewport);
+        DrawOverworldParticles(viewport);
         DrawDungeonPortraitStrip(view);
     }
 
@@ -1618,7 +1619,61 @@ public sealed class NotimaGame : Game
         DrawPanel(viewport.X, viewport.Y, viewport.Width, viewport.Height, new Color(10, 12, 18, 255));
         DrawFrame(viewport, new Color(80, 88, 106), 2);
         DrawCrawlerEnvironment(viewport, isDungeonView: true);
+        DrawDungeonParticles(viewport);
         DrawDungeonPortraitStrip(view);
+    }
+
+    private void DrawOverworldParticles(RectangleF viewport)
+    {
+        var cycle = ((playerCell.X * 31) + (playerCell.Y * 17) + (int)facing) % 3;
+        var showSnow = cycle != 1;
+        var showLeaves = cycle != 0;
+        var count = showSnow && showLeaves ? 36 : 24;
+
+        for (var i = 0; i < count; i++)
+        {
+            var seed = (i * 97) + (playerCell.X * 13) + (playerCell.Y * 19);
+            var drift = (totalTime * (12.0f + (seed % 7))) + (seed * 0.37f);
+            var x = viewport.X + PositiveModulo((seed * 23.0f) + (showSnow ? drift * 0.85f : drift * 1.35f), viewport.Width);
+            var y = viewport.Y + PositiveModulo((seed * 41.0f) + (showSnow ? drift * 1.9f : drift * 1.35f), viewport.Height);
+
+            if (showSnow && (!showLeaves || i % 2 == 0))
+            {
+                var size = 2.0f + ((seed % 3) * 0.8f);
+                DrawPanel(x, y, size, size, new Color(240, 246, 255, 170));
+                continue;
+            }
+
+            var sway = MathF.Sin((totalTime * 2.4f) + seed) * 4.0f;
+            var leaf = new RectangleF(x + sway, y, 5.0f, 3.0f);
+            var tint = (seed % 3) switch
+            {
+                0 => new Color(168, 122, 54, 176),
+                1 => new Color(122, 98, 36, 176),
+                _ => new Color(154, 82, 42, 176),
+            };
+            DrawPanel(leaf.X, leaf.Y, leaf.Width, leaf.Height, tint);
+        }
+    }
+
+    private void DrawDungeonParticles(RectangleF viewport)
+    {
+        for (var i = 0; i < 15; i++)
+        {
+            var seed = (i * 73) + (dungeonCell.X * 11) + (dungeonCell.Y * 17);
+            var drift = (totalTime * (8.0f + (seed % 5))) + (seed * 0.21f);
+            var x = viewport.X + PositiveModulo((seed * 19.0f) + drift, viewport.Width);
+            var y = viewport.Y + PositiveModulo((seed * 29.0f) + (drift * 0.7f), viewport.Height);
+            var size = 1.5f + ((seed % 4) * 0.55f);
+            var alpha = (byte)(20 + (seed % 36));
+            DrawPanel(x, y, size, size, new Color(112, 98, 84, alpha));
+        }
+    }
+
+    private static float PositiveModulo(float value, float modulus)
+    {
+        var result = value % modulus;
+        return result < 0 ? result + modulus : result;
     }
 
     private void DrawOverworldEnvironment(RectangleF viewport)
@@ -3490,6 +3545,35 @@ public sealed class NotimaGame : Game
         }
 
         return preferred[random.Next(preferred.Count)];
+    }
+
+    private void PlayEnemyHitSound(string enemyName)
+    {
+        switch (enemyName)
+        {
+            case "WOLF":
+                audioPlayer?.PlayWolfAttack();
+                break;
+            case "LEECH":
+                audioPlayer?.PlayLeechSuck();
+                break;
+            default:
+                audioPlayer?.PlayClash();
+                break;
+        }
+    }
+
+    private void PlayEnemyMissSound(string enemyName)
+    {
+        switch (enemyName)
+        {
+            case "WOLF":
+                audioPlayer?.PlayWolfGrowl();
+                break;
+            default:
+                audioPlayer?.PlaySwish();
+                break;
+        }
     }
 
     private Vector2 GetPartyAttackOffset(int partyIndex)

@@ -152,3 +152,19 @@ This first scaffold uses a handcrafted sample overworld JSON in `assets/data/ove
 - License: `CC0`
 - Local runtime file:
   - `assets/audio/door_open_01.ogg`
+
+### Wolf combat
+
+- Asset: `Wolf Monster Sound`
+- Source: OpenGameArt
+- License: `CC0`
+- Local runtime file:
+  - `assets/audio/wolf_monster_6.mp3`
+
+### Leech combat
+
+- Asset: `8 wet squish, slurp impacts`
+- Source: OpenGameArt
+- License: `CC0`
+- Local runtime file:
+  - `assets/audio/leech-suck.ogg`

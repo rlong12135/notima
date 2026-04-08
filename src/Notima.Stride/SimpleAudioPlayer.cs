@@ -14,6 +14,9 @@ internal sealed class SimpleAudioPlayer : IDisposable
     private readonly string magicPath;
     private readonly string portalPath;
     private readonly string chestPath;
+    private readonly string wolfAttackPath;
+    private readonly string wolfGrowlPath;
+    private readonly string leechSuckPath;
     private readonly Random random = new();
     private readonly string? ffplayPath;
     private readonly string? oggPlayerPath;
@@ -54,6 +57,18 @@ internal sealed class SimpleAudioPlayer : IDisposable
             Path.Combine(contentAudioDirectory, "door_open_01.ogg"),
             Path.Combine(generatedAudioDirectory, "chest.wav"),
             BuildChestPcm());
+        wolfAttackPath = ResolveOrCreate(
+            Path.Combine(contentAudioDirectory, "wolf_monster_6.mp3"),
+            Path.Combine(generatedAudioDirectory, "wolf-attack.wav"),
+            BuildClashPcm());
+        wolfGrowlPath = ResolveOrCreate(
+            Path.Combine(contentAudioDirectory, "wolf_monster_6.mp3"),
+            Path.Combine(generatedAudioDirectory, "wolf-growl.wav"),
+            BuildSwishPcm());
+        leechSuckPath = ResolveOrCreate(
+            Path.Combine(contentAudioDirectory, "leech-suck.ogg"),
+            Path.Combine(generatedAudioDirectory, "leech.wav"),
+            BuildMagicPcm());
         ffplayPath = ResolveExecutable("/usr/bin/ffplay");
         oggPlayerPath = ResolveExecutable("/usr/bin/ogg123");
         wavPlayerPath = ResolveFirstAvailable("/usr/bin/paplay", "/usr/bin/pw-play", "/usr/bin/aplay");
@@ -95,6 +110,12 @@ internal sealed class SimpleAudioPlayer : IDisposable
     public void PlayPortal() => Play(portalPath);
 
     public void PlayChest() => Play(chestPath);
+
+    public void PlayWolfAttack() => Play(wolfAttackPath);
+
+    public void PlayWolfGrowl() => Play(wolfGrowlPath);
+
+    public void PlayLeechSuck() => Play(leechSuckPath);
 
     public void Dispose()
     {
