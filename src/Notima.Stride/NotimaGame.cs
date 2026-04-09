@@ -1831,6 +1831,11 @@ public sealed class NotimaGame : Game
             footprintWidth *= 1.35f;
             footprintHeight *= 1.45f;
         }
+        else if (symbol == 'T')
+        {
+            footprintWidth *= centerLane ? 1.7f : 1.45f;
+            footprintHeight *= centerLane ? 1.55f : 1.35f;
+        }
 
         DrawOverworldBillboardFromFootprint(viewport, symbol, centerX, baseY, footprintWidth, footprintHeight, 0.0f, variantSeed);
     }
@@ -2273,6 +2278,8 @@ public sealed class NotimaGame : Game
         for (var i = 0; i < party.Members.Count; i++)
         {
             var member = party.Members[i];
+            var equippedWeapon = GetEquippedWeapon(member);
+            var equippedArmor = GetEquippedArmor(member);
             var card = new RectangleF(view.X + 206 + (i * 112), top, 96, 96);
             var portraitIndex = i switch
             {
@@ -2289,11 +2296,15 @@ public sealed class NotimaGame : Game
             if (missingRatio > 0.0f)
             {
                 var overlayHeight = portraitRect.Height * missingRatio;
-                var overlayRect = new RectangleF(portraitRect.X, portraitRect.Bottom - overlayHeight, portraitRect.Width, overlayHeight);
+                var overlayBottom = card.Bottom - 5.0f;
+                var overlayRect = new RectangleF(portraitRect.X, overlayBottom - overlayHeight, portraitRect.Width, overlayHeight);
                 DrawPanel(overlayRect.X, overlayRect.Y, overlayRect.Width, overlayRect.Height, new Color(168, 28, 28, 108));
             }
             DrawPanel(card.X + 3, card.Bottom - 17, 90, 12, new Color(8, 10, 14, 200));
-            DrawText($"{member.Name} {member.Health}/{member.MaxHealth}", new Vector2(card.X + 6, card.Bottom - 16), member.IsAlive ? new Color(228, 228, 236) : new Color(122, 122, 132), 1);
+            DrawText($"{member.Name} {member.Health}/{member.MaxHealth} +{equippedWeapon.Attack} -{equippedArmor.Defense}", new Vector2(card.X + 6, card.Bottom - 16), member.IsAlive ? new Color(228, 228, 236) : new Color(122, 122, 132), 1);
+            DrawPanel(card.X + 3, card.Y + 3, 90, 18, new Color(8, 10, 14, 200));
+            DrawText(equippedWeapon.Name, new Vector2(card.X + 6, card.Y + 5), new Color(182, 154, 126), 1);
+            DrawText(equippedArmor.Name, new Vector2(card.X + 6, card.Y + 12), new Color(146, 154, 172), 1);
         }
     }
 
@@ -3040,27 +3051,33 @@ public sealed class NotimaGame : Game
         var towerColor = new Color(122, 110, 88);
         var shadowColor = new Color(72, 52, 38);
         var trimColor = new Color(174, 156, 120);
+        var accentColor = new Color(188, 166, 126);
 
         DrawPanel(rect.X + (rect.Width * 0.08f), rect.Bottom - (rect.Height * 0.16f), rect.Width * 0.84f, rect.Height * 0.08f, shadowColor);
 
-        DrawPanel(rect.X + (rect.Width * 0.12f), rect.Y + (rect.Height * 0.26f), rect.Width * 0.16f, rect.Height * 0.46f, towerColor);
-        DrawPanel(rect.X + (rect.Width * 0.72f), rect.Y + (rect.Height * 0.24f), rect.Width * 0.16f, rect.Height * 0.48f, towerColor);
-        DrawPanel(rect.X + (rect.Width * 0.18f), rect.Y + (rect.Height * 0.18f), rect.Width * 0.1f, rect.Height * 0.08f, trimColor);
-        DrawPanel(rect.X + (rect.Width * 0.72f), rect.Y + (rect.Height * 0.16f), rect.Width * 0.1f, rect.Height * 0.08f, trimColor);
+        DrawPanel(rect.X + (rect.Width * 0.08f), rect.Y + (rect.Height * 0.32f), rect.Width * 0.16f, rect.Height * 0.44f, towerColor);
+        DrawPanel(rect.X + (rect.Width * 0.76f), rect.Y + (rect.Height * 0.3f), rect.Width * 0.16f, rect.Height * 0.46f, towerColor);
+        DrawPanel(rect.X + (rect.Width * 0.12f), rect.Y + (rect.Height * 0.22f), rect.Width * 0.14f, rect.Height * 0.1f, accentColor);
+        DrawPanel(rect.X + (rect.Width * 0.76f), rect.Y + (rect.Height * 0.2f), rect.Width * 0.14f, rect.Height * 0.1f, accentColor);
 
-        DrawPanel(rect.X + (rect.Width * 0.28f), rect.Y + (rect.Height * 0.34f), rect.Width * 0.18f, rect.Height * 0.28f, wallColor);
-        DrawPanel(rect.X + (rect.Width * 0.48f), rect.Y + (rect.Height * 0.3f), rect.Width * 0.2f, rect.Height * 0.34f, wallColor);
-        DrawPanel(rect.X + (rect.Width * 0.32f), rect.Y + (rect.Height * 0.26f), rect.Width * 0.12f, rect.Height * 0.08f, roofColor);
-        DrawPanel(rect.X + (rect.Width * 0.5f), rect.Y + (rect.Height * 0.2f), rect.Width * 0.14f, rect.Height * 0.1f, roofColor);
+        DrawPanel(rect.X + (rect.Width * 0.24f), rect.Y + (rect.Height * 0.28f), rect.Width * 0.18f, rect.Height * 0.2f, wallColor);
+        DrawPanel(rect.X + (rect.Width * 0.42f), rect.Y + (rect.Height * 0.24f), rect.Width * 0.16f, rect.Height * 0.24f, wallColor);
+        DrawPanel(rect.X + (rect.Width * 0.58f), rect.Y + (rect.Height * 0.3f), rect.Width * 0.18f, rect.Height * 0.18f, wallColor);
+        DrawPanel(rect.X + (rect.Width * 0.27f), rect.Y + (rect.Height * 0.2f), rect.Width * 0.12f, rect.Height * 0.08f, roofColor);
+        DrawPanel(rect.X + (rect.Width * 0.44f), rect.Y + (rect.Height * 0.16f), rect.Width * 0.12f, rect.Height * 0.08f, roofColor);
+        DrawPanel(rect.X + (rect.Width * 0.61f), rect.Y + (rect.Height * 0.22f), rect.Width * 0.12f, rect.Height * 0.08f, roofColor);
 
-        DrawPanel(rect.X + (rect.Width * 0.24f), rect.Y + (rect.Height * 0.46f), rect.Width * 0.52f, rect.Height * 0.22f, wallColor);
-        DrawPanel(rect.X + (rect.Width * 0.28f), rect.Y + (rect.Height * 0.4f), rect.Width * 0.44f, rect.Height * 0.06f, trimColor);
-        DrawPanel(rect.X + (rect.Width * 0.42f), rect.Bottom - (rect.Height * 0.3f), rect.Width * 0.16f, rect.Height * 0.22f, shadowColor);
+        DrawPanel(rect.X + (rect.Width * 0.18f), rect.Y + (rect.Height * 0.46f), rect.Width * 0.64f, rect.Height * 0.24f, wallColor);
+        DrawPanel(rect.X + (rect.Width * 0.2f), rect.Y + (rect.Height * 0.42f), rect.Width * 0.6f, rect.Height * 0.05f, trimColor);
+        DrawPanel(rect.X + (rect.Width * 0.16f), rect.Y + (rect.Height * 0.54f), rect.Width * 0.08f, rect.Height * 0.08f, shadowColor);
+        DrawPanel(rect.X + (rect.Width * 0.76f), rect.Y + (rect.Height * 0.54f), rect.Width * 0.08f, rect.Height * 0.08f, shadowColor);
+        DrawPanel(rect.X + (rect.Width * 0.38f), rect.Bottom - (rect.Height * 0.34f), rect.Width * 0.24f, rect.Height * 0.26f, shadowColor);
+        DrawPanel(rect.X + (rect.Width * 0.46f), rect.Y + (rect.Height * 0.48f), rect.Width * 0.08f, rect.Height * 0.12f, trimColor);
 
-        DrawPanel(rect.X + (rect.Width * 0.18f), rect.Y + (rect.Height * 0.52f), rect.Width * 0.04f, rect.Height * 0.06f, shadowColor);
-        DrawPanel(rect.X + (rect.Width * 0.24f), rect.Y + (rect.Height * 0.5f), rect.Width * 0.04f, rect.Height * 0.08f, shadowColor);
-        DrawPanel(rect.X + (rect.Width * 0.68f), rect.Y + (rect.Height * 0.5f), rect.Width * 0.04f, rect.Height * 0.08f, shadowColor);
-        DrawPanel(rect.X + (rect.Width * 0.74f), rect.Y + (rect.Height * 0.52f), rect.Width * 0.04f, rect.Height * 0.06f, shadowColor);
+        DrawPanel(rect.X + (rect.Width * 0.14f), rect.Y + (rect.Height * 0.56f), rect.Width * 0.04f, rect.Height * 0.06f, shadowColor);
+        DrawPanel(rect.X + (rect.Width * 0.22f), rect.Y + (rect.Height * 0.52f), rect.Width * 0.04f, rect.Height * 0.1f, shadowColor);
+        DrawPanel(rect.X + (rect.Width * 0.72f), rect.Y + (rect.Height * 0.52f), rect.Width * 0.04f, rect.Height * 0.1f, shadowColor);
+        DrawPanel(rect.X + (rect.Width * 0.8f), rect.Y + (rect.Height * 0.56f), rect.Width * 0.04f, rect.Height * 0.06f, shadowColor);
     }
 
     private void DrawHarborSilhouette(RectangleF rect)
@@ -3552,10 +3569,10 @@ public sealed class NotimaGame : Game
         switch (enemyName)
         {
             case "WOLF":
-                audioPlayer?.PlayWolfAttack();
+                audioPlayer?.PlayWolfYelp();
                 break;
             case "LEECH":
-                audioPlayer?.PlayLeechSuck();
+                audioPlayer?.PlayLeechHit();
                 break;
             default:
                 audioPlayer?.PlayClash();

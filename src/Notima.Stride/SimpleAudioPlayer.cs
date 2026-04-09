@@ -16,7 +16,9 @@ internal sealed class SimpleAudioPlayer : IDisposable
     private readonly string chestPath;
     private readonly string wolfAttackPath;
     private readonly string wolfGrowlPath;
+    private readonly string wolfYelpPath;
     private readonly string leechSuckPath;
+    private readonly string leechHitPath;
     private readonly Random random = new();
     private readonly string? ffplayPath;
     private readonly string? oggPlayerPath;
@@ -65,10 +67,18 @@ internal sealed class SimpleAudioPlayer : IDisposable
             Path.Combine(contentAudioDirectory, "wolf_monster_6.mp3"),
             Path.Combine(generatedAudioDirectory, "wolf-growl.wav"),
             BuildSwishPcm());
+        wolfYelpPath = ResolveOrCreate(
+            Path.Combine(contentAudioDirectory, "wolf_monster_6.mp3"),
+            Path.Combine(generatedAudioDirectory, "wolf-yelp.wav"),
+            BuildSwishPcm());
         leechSuckPath = ResolveOrCreate(
             Path.Combine(contentAudioDirectory, "leech-suck.ogg"),
             Path.Combine(generatedAudioDirectory, "leech.wav"),
             BuildMagicPcm());
+        leechHitPath = ResolveOrCreate(
+            Path.Combine(contentAudioDirectory, "impactsplat02.mp3.flac"),
+            Path.Combine(generatedAudioDirectory, "leech-hit.wav"),
+            BuildMeatCutPcm());
         ffplayPath = ResolveExecutable("/usr/bin/ffplay");
         oggPlayerPath = ResolveExecutable("/usr/bin/ogg123");
         wavPlayerPath = ResolveFirstAvailable("/usr/bin/paplay", "/usr/bin/pw-play", "/usr/bin/aplay");
@@ -115,7 +125,11 @@ internal sealed class SimpleAudioPlayer : IDisposable
 
     public void PlayWolfGrowl() => Play(wolfGrowlPath);
 
+    public void PlayWolfYelp() => Play(wolfYelpPath);
+
     public void PlayLeechSuck() => Play(leechSuckPath);
+
+    public void PlayLeechHit() => Play(leechHitPath);
 
     public void Dispose()
     {
@@ -360,6 +374,26 @@ internal sealed class SimpleAudioPlayer : IDisposable
             var scrape = MathF.Sin(2.0f * MathF.PI * (220.0f + (t * 90.0f)) * t) * 0.05f;
             var noise = ((((i * 19) % 101) / 50.5f) - 1.0f) * 0.03f;
             samples[i] = (wood + scrape + noise) * env;
+        }
+
+        return samples;
+    }
+
+    private static float[] BuildMeatCutPcm()
+    {
+        const int sampleRate = 22050;
+        const double duration = 0.18;
+        var length = (int)(sampleRate * duration);
+        var samples = new float[length];
+
+        for (var i = 0; i < length; i++)
+        {
+            var t = i / (float)sampleRate;
+            var env = MathF.Exp(-14.0f * t);
+            var thud = MathF.Sin(2.0f * MathF.PI * 120.0f * t) * 0.12f;
+            var tear = MathF.Sin(2.0f * MathF.PI * (320.0f + (t * 180.0f)) * t) * 0.08f;
+            var wetNoise = ((((i * 37) % 127) / 63.5f) - 1.0f) * 0.16f;
+            samples[i] = (thud + tear + wetNoise) * env;
         }
 
         return samples;
