@@ -166,6 +166,7 @@ public sealed class NotimaGame : Game
         grimCreatureTexture = LoadRgbaTexture("Content/Art/notima_grim_creatures.rgba", 256, 384);
         audioPlayer = new SimpleAudioPlayer();
         LoadMapFromDisk();
+        UpdateBackgroundMusic();
         UpdateWindowTitle();
     }
 
@@ -188,11 +189,13 @@ public sealed class NotimaGame : Game
                 panelTitle = string.Empty;
                 panelLines.Clear();
             }
+            UpdateBackgroundMusic();
             UpdateWindowTitle();
             return;
         }
 
         HandleInput();
+        UpdateBackgroundMusic();
         UpdateWindowTitle();
     }
 
@@ -325,6 +328,27 @@ public sealed class NotimaGame : Game
             moveCooldown = MoveRepeatDelay;
             TryMove(GetBackwardDelta());
         }
+    }
+
+    private void UpdateBackgroundMusic()
+    {
+        var mode = MusicMode.Overworld;
+        if (dungeon is not null)
+        {
+            mode = MusicMode.Dungeon;
+        }
+        else if (uiMode == UiMode.Town && townMenu is not null)
+        {
+            mode = townMenu.Symbol switch
+            {
+                'T' => MusicMode.Town,
+                'H' => MusicMode.Harbor,
+                'S' => MusicMode.Shrine,
+                _ => MusicMode.Overworld,
+            };
+        }
+
+        audioPlayer?.SyncMusic(mode);
     }
 
     private void HandleEncounterInput()
