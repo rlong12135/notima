@@ -106,6 +106,41 @@ This first scaffold uses a handcrafted sample overworld JSON in `assets/data/ove
   - `assets/audio/metal-hit-2.wav`
   - `assets/audio/metal-hit-3.wav`
 
+### Combat mapping
+
+- Human hit:
+  - `assets/audio/punch_1.ogg`
+  - `assets/audio/metal-hit.wav` as fallback
+- Human miss:
+  - `assets/audio/swosh-05.flac`
+  - `assets/audio/swish-miss.ogg`
+- Bandit hit:
+  - `assets/audio/metal_interaction1.wav`
+  - `assets/audio/metal_interaction2.wav`
+  - `assets/audio/metal-hit.wav`
+  - `assets/audio/metal-hit-2.wav`
+  - `assets/audio/metal-hit-3.wav`
+- Bandit miss:
+  - `assets/audio/metal_swing1.wav`
+  - `assets/audio/metal_interaction1.wav`
+  - `assets/audio/metal_interaction2.wav`
+- Wolf hit:
+  - `assets/audio/wolf_monster_6.mp3`
+- Wolf miss:
+  - `assets/audio/swish-miss.ogg`
+  - `assets/audio/swosh-05.flac`
+- Leech hit:
+  - `assets/audio/leech-suck.ogg`
+- Leech miss:
+  - `assets/audio/impactsplat02.mp3.flac`
+  - `assets/audio/swosh-05.flac`
+- Boss hit:
+  - same pool as bandit hit, plus generic clash fallback
+- Boss miss:
+  - same pool as bandit miss
+- Not used in combat:
+  - `assets/audio/sboe.wav`
+
 ### Combat miss
 
 - Asset: `Swish - bamboo stick weapon swhoshes`

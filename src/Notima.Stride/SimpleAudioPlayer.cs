@@ -16,6 +16,14 @@ internal sealed class SimpleAudioPlayer : IDisposable
     private readonly string magicPath;
     private readonly string portalPath;
     private readonly string chestPath;
+    private readonly string[] humanHitPaths;
+    private readonly string[] humanMissPaths;
+    private readonly string[] banditHitPaths;
+    private readonly string[] banditMissPaths;
+    private readonly string[] wolfHitPaths;
+    private readonly string[] wolfMissPaths;
+    private readonly string[] leechHitPaths;
+    private readonly string[] leechMissPaths;
     private readonly string overworldMusicPath;
     private readonly string dungeonMusicPath;
     private readonly string townMusicPath;
@@ -25,7 +33,6 @@ internal sealed class SimpleAudioPlayer : IDisposable
     private readonly string wolfGrowlPath;
     private readonly string wolfYelpPath;
     private readonly string leechSuckPath;
-    private readonly string leechHitPath;
     private readonly Random random = new();
     private readonly string? ffplayPath;
     private readonly string? oggPlayerPath;
@@ -71,6 +78,32 @@ internal sealed class SimpleAudioPlayer : IDisposable
             Path.Combine(contentAudioDirectory, "door_open_01.ogg"),
             Path.Combine(generatedAudioDirectory, "chest.wav"),
             BuildChestPcm());
+        humanHitPaths = ResolveExistingPaths(
+            Path.Combine(contentAudioDirectory, "punch_1.ogg"),
+            Path.Combine(contentAudioDirectory, "metal-hit.wav"));
+        humanMissPaths = ResolveExistingPaths(
+            Path.Combine(contentAudioDirectory, "swosh-05.flac"),
+            Path.Combine(contentAudioDirectory, "swish-miss.ogg"));
+        banditHitPaths = ResolveExistingPaths(
+            Path.Combine(contentAudioDirectory, "metal_interaction1.wav"),
+            Path.Combine(contentAudioDirectory, "metal_interaction2.wav"),
+            Path.Combine(contentAudioDirectory, "metal-hit.wav"),
+            Path.Combine(contentAudioDirectory, "metal-hit-2.wav"),
+            Path.Combine(contentAudioDirectory, "metal-hit-3.wav"));
+        banditMissPaths = ResolveExistingPaths(
+            Path.Combine(contentAudioDirectory, "metal_swing1.wav"),
+            Path.Combine(contentAudioDirectory, "metal_interaction1.wav"),
+            Path.Combine(contentAudioDirectory, "metal_interaction2.wav"));
+        wolfHitPaths = ResolveExistingPaths(
+            Path.Combine(contentAudioDirectory, "wolf_monster_6.mp3"));
+        wolfMissPaths = ResolveExistingPaths(
+            Path.Combine(contentAudioDirectory, "swish-miss.ogg"),
+            Path.Combine(contentAudioDirectory, "swosh-05.flac"));
+        leechHitPaths = ResolveExistingPaths(
+            Path.Combine(contentAudioDirectory, "leech-suck.ogg"));
+        leechMissPaths = ResolveExistingPaths(
+            Path.Combine(contentAudioDirectory, "impactsplat02.mp3.flac"),
+            Path.Combine(contentAudioDirectory, "swosh-05.flac"));
         overworldMusicPath = ResolveOrCreate(
             Path.Combine(generatedAudioDirectory, "overworld-music.wav"),
             Path.Combine(generatedAudioDirectory, "overworld-music.wav"),
@@ -107,10 +140,6 @@ internal sealed class SimpleAudioPlayer : IDisposable
             Path.Combine(contentAudioDirectory, "leech-suck.ogg"),
             Path.Combine(generatedAudioDirectory, "leech.wav"),
             BuildMagicPcm());
-        leechHitPath = ResolveOrCreate(
-            Path.Combine(contentAudioDirectory, "impactsplat02.mp3.flac"),
-            Path.Combine(generatedAudioDirectory, "leech-hit.wav"),
-            BuildMeatCutPcm());
         ffplayPath = ResolveExecutable("/usr/bin/ffplay");
         oggPlayerPath = ResolveExecutable("/usr/bin/ogg123");
         wavPlayerPath = ResolveFirstAvailable("/usr/bin/paplay", "/usr/bin/pw-play", "/usr/bin/aplay");
@@ -153,6 +182,26 @@ internal sealed class SimpleAudioPlayer : IDisposable
 
     public void PlayChest() => Play(chestPath);
 
+    public void PlayHumanHit() => PlayRandom(humanHitPaths, fallback: clashPaths);
+
+    public void PlayHumanMiss() => PlayRandom(humanMissPaths, fallback: new[] { swishPath });
+
+    public void PlayBanditHit() => PlayRandom(banditHitPaths, fallback: clashPaths);
+
+    public void PlayBanditMiss() => PlayRandom(banditMissPaths, fallback: new[] { swishPath });
+
+    public void PlayWolfHit() => PlayRandom(wolfHitPaths, fallback: clashPaths);
+
+    public void PlayWolfMiss() => PlayRandom(wolfMissPaths, fallback: new[] { swishPath });
+
+    public void PlayLeechHit() => PlayRandom(leechHitPaths, fallback: new[] { magicPath });
+
+    public void PlayLeechMiss() => PlayRandom(leechMissPaths, fallback: new[] { swishPath });
+
+    public void PlayBossHit() => PlayRandom(banditHitPaths.Concat(clashPaths).ToArray(), fallback: clashPaths);
+    
+    public void PlayBossMiss() => PlayRandom(banditMissPaths, fallback: new[] { swishPath });
+
     public void PlayWolfAttack() => Play(wolfAttackPath);
 
     public void PlayWolfGrowl() => Play(wolfGrowlPath);
@@ -160,8 +209,6 @@ internal sealed class SimpleAudioPlayer : IDisposable
     public void PlayWolfYelp() => Play(wolfYelpPath);
 
     public void PlayLeechSuck() => Play(leechSuckPath);
-
-    public void PlayLeechHit() => Play(leechHitPath);
 
     public void SyncMusic(MusicMode mode)
     {
@@ -333,17 +380,6 @@ internal sealed class SimpleAudioPlayer : IDisposable
         return candidates.Where(File.Exists).ToArray();
     }
 
-    private static string ResolveOrCreate(string preferredPath, string fallbackGeneratedPath, float[] fallbackPcm)
-    {
-        if (File.Exists(preferredPath))
-        {
-            return preferredPath;
-        }
-
-        WriteWav(fallbackGeneratedPath, fallbackPcm, 22050);
-        return fallbackGeneratedPath;
-    }
-
     private static string? ResolveExecutable(string path)
     {
         return File.Exists(path) ? path : null;
@@ -360,6 +396,17 @@ internal sealed class SimpleAudioPlayer : IDisposable
         }
 
         return null;
+    }
+
+    private static string ResolveOrCreate(string preferredPath, string fallbackGeneratedPath, float[] fallbackPcm)
+    {
+        if (!string.Equals(preferredPath, fallbackGeneratedPath, StringComparison.OrdinalIgnoreCase) && File.Exists(preferredPath))
+        {
+            return preferredPath;
+        }
+
+        WriteWav(fallbackGeneratedPath, fallbackPcm, 22050);
+        return fallbackGeneratedPath;
     }
 
     private static Process? StartProcess(string fileName, string arguments)
@@ -380,6 +427,17 @@ internal sealed class SimpleAudioPlayer : IDisposable
         {
             return null;
         }
+    }
+
+    private void PlayRandom(string[] candidates, string[] fallback)
+    {
+        var options = candidates.Length > 0 ? candidates : fallback;
+        if (options.Length == 0)
+        {
+            return;
+        }
+
+        Play(options[random.Next(options.Length)]);
     }
 
     private Process? StartWavPlayback(string path, int volume)

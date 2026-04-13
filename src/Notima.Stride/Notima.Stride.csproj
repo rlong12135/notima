@@ -20,8 +20,12 @@
     <None Include="..\..\assets\audio\metal-hit.wav" Link="Content\Audio\metal-hit.wav" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\audio\metal-hit-2.wav" Link="Content\Audio\metal-hit-2.wav" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\audio\metal-hit-3.wav" Link="Content\Audio\metal-hit-3.wav" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\metal_interaction1.wav" Link="Content\Audio\metal_interaction1.wav" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\metal_interaction2.wav" Link="Content\Audio\metal_interaction2.wav" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\metal_swing1.wav" Link="Content\Audio\metal_swing1.wav" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\audio\swish-miss.ogg" Link="Content\Audio\swish-miss.ogg" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\assets\audio\sboe.wav" Link="Content\Audio\sboe.wav" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\swosh-05.flac" Link="Content\Audio\swosh-05.flac" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\punch_1.ogg" Link="Content\Audio\punch_1.ogg" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\audio\magical_1.ogg" Link="Content\Audio\magical_1.ogg" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\audio\teleport.wav" Link="Content\Audio\teleport.wav" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\audio\door_open_01.ogg" Link="Content\Audio\door_open_01.ogg" CopyToOutputDirectory="PreserveNewest" />
@@ -29,6 +33,7 @@
     <None Include="..\..\assets\audio\castlefanfare.ogg" Link="Content\Audio\castlefanfare.ogg" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\audio\wolf_monster_6.mp3" Link="Content\Audio\wolf_monster_6.mp3" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\audio\leech-suck.ogg" Link="Content\Audio\leech-suck.ogg" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\audio\impactsplat02.mp3.flac" Link="Content\Audio\impactsplat02.mp3.flac" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\original\notima_isometric_hero.png" Link="Content\Art\notima_isometric_hero.png" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\original\notima_isometric_tiles.png" Link="Content\Art\notima_isometric_tiles.png" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\original\notima_enemy_sheet.png" Link="Content\Art\notima_enemy_sheet.png" CopyToOutputDirectory="PreserveNewest" />

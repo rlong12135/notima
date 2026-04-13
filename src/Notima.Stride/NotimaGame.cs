@@ -821,7 +821,7 @@ public sealed class NotimaGame : Game
         if (random.NextDouble() < 0.14)
         {
             roundEvents.Add($"{party.Members[partyIndex].Name} misses {actingTarget.Name}");
-            audioPlayer?.PlaySwish();
+            audioPlayer?.PlayHumanMiss();
             return;
         }
 
@@ -834,7 +834,7 @@ public sealed class NotimaGame : Game
 
         actingTarget.Health = Math.Max(0, actingTarget.Health - playerDamage);
         roundEvents.Add($"{party.Members[partyIndex].Name} hits {actingTarget.Name} for {playerDamage}");
-        audioPlayer?.PlayClash();
+        audioPlayer?.PlayHumanHit();
         if (!actingTarget.IsAlive)
         {
             selectedEnemyIndex = GetDefaultSelectedEnemy();
@@ -871,7 +871,7 @@ public sealed class NotimaGame : Game
         if (random.NextDouble() < 0.16)
         {
             roundEvents.Add($"{enemy.Name} misses {party.Members[targetPartyIndex].Name}");
-            PlayEnemyMissSound(enemy.Name);
+            PlayCreatureMissSound(enemy.Name);
             return;
         }
         var enemyDamageBase = random.Next(enemy.AttackMin, enemy.AttackMax + 1);
@@ -883,7 +883,7 @@ public sealed class NotimaGame : Game
 
         DamagePartyMember(targetPartyIndex, enemyDamage);
         roundEvents.Add($"{enemy.Name} hits {party.Members[targetPartyIndex].Name} for {enemyDamage}");
-        PlayEnemyHitSound(enemy.Name);
+        PlayCreatureHitSound(enemy.Name);
     }
 
     private void HandleDefeat()
@@ -3588,32 +3588,43 @@ public sealed class NotimaGame : Game
         return preferred[random.Next(preferred.Count)];
     }
 
-    private void PlayEnemyHitSound(string enemyName)
+    private static readonly Dictionary<string, Action<SimpleAudioPlayer>> _creatureHitSounds = new()
     {
-        switch (enemyName)
+        ["WOLF"] = ap => ap.PlayWolfHit(),
+        ["LEECH"] = ap => ap.PlayLeechHit(),
+        ["BANDIT"] = ap => ap.PlayBanditHit(),
+        ["DREAD LORD"] = ap => ap.PlayBossHit(),
+    };
+
+    private static readonly Dictionary<string, Action<SimpleAudioPlayer>> _creatureMissSounds = new()
+    {
+        ["WOLF"] = ap => ap.PlayWolfMiss(),
+        ["LEECH"] = ap => ap.PlayLeechMiss(),
+        ["BANDIT"] = ap => ap.PlayBanditMiss(),
+        ["DREAD LORD"] = ap => ap.PlayBossMiss(),
+    };
+
+    private void PlayCreatureHitSound(string enemyName)
+    {
+        if (_creatureHitSounds.TryGetValue(enemyName, out var hitAction))
         {
-            case "WOLF":
-                audioPlayer?.PlayWolfYelp();
-                break;
-            case "LEECH":
-                audioPlayer?.PlayLeechHit();
-                break;
-            default:
-                audioPlayer?.PlayClash();
-                break;
+            hitAction(audioPlayer!);
+        }
+        else
+        {
+            audioPlayer?.PlayClash();
         }
     }
 
-    private void PlayEnemyMissSound(string enemyName)
+    private void PlayCreatureMissSound(string enemyName)
     {
-        switch (enemyName)
+        if (_creatureMissSounds.TryGetValue(enemyName, out var missAction))
         {
-            case "WOLF":
-                audioPlayer?.PlayWolfGrowl();
-                break;
-            default:
-                audioPlayer?.PlaySwish();
-                break;
+            missAction(audioPlayer!);
+        }
+        else
+        {
+            audioPlayer?.PlaySwish();
         }
     }
 
